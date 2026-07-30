@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Pannello Operatore — Sistema Padel</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin-top: 32px; color: #333; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-top: 8px;
+    }
+    th, td {
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 1px solid #eee;
+        font-size: 14px;
+        vertical-align: top;
+    }
+    th { background: #fafafa; color: #555; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    .vuoto { color: #999; font-style: italic; padding: 14px; }
+    button {
+        border: none;
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        margin-right: 6px;
+        font-weight: 500;
+    }
+    .btn-verde { background: #d5f2df; color: #1a7a3a; }
+    .btn-verde:hover { background: #bfe9cd; }
+    .btn-rosso { background: #fbdcdc; color: #a3231f; }
+    .btn-rosso:hover { background: #f7c4c4; }
+    .btn-blu { background: #dbeafe; color: #1d4ed8; }
+    .btn-blu:hover { background: #c3ddfd; }
+    .messaggio {
+        margin-top: 10px; padding: 8px 12px; border-radius: 6px;
+        font-size: 13px; display: none;
+    }
+    .messaggio.ok { background: #d5f2df; color: #1a7a3a; }
+    .messaggio.errore { background: #fbdcdc; color: #a3231f; }
+    .form-circolo {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        background: white;
+        padding: 14px;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .form-circolo input {
+        padding: 8px 10px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 13px;
+        flex: 1 1 160px;
+    }
+    .form-circolo input[placeholder="Nome *"] { flex: 1 1 200px; }
+</style>
+</head>
+<body>
+
+<h1>🎾 Pannello Operatore</h1>
+<p class="sottotitolo">Gestione prenotazioni campi e partite giocate — Sistema Prenotazione Padel</p>
+
+<h2>Gruppi in attesa di prenotazione</h2>
+<p class="sottotitolo">Verifica la disponibilità del campo (su Playtomic o telefonando al circolo), poi clicca il bottone corrispondente.</p>
+<div id="tabella-gruppi"></div>
+<div id="msg-gruppi" class="messaggio"></div>
+
+<h2>Partite da segnare manualmente come giocate (eccezioni)</h2>
+<p class="sottotitolo">Il sistema segna automaticamente ogni partita come giocata 90 minuti dopo l'orario di inizio — non serve fare nulla in condizioni normali. Usa questa tabella solo per casi eccezionali (es. partita finita molto prima o dopo il previsto).</p>
+<div id="tabella-partite"></div>
+<div id="msg-partite" class="messaggio"></div>
+
+<script>
+async function caricaGruppi() {
+    const risposta = await fetch('/admin/gruppi-da-prenotare');
+    const gruppi = await risposta.json();
+    const contenitore = document.getElementById('tabella-gruppi');
+
+    if (gruppi.length === 0) {
+        contenitore.innerHTML = '<p class="vuoto">Nessun gruppo in attesa di prenotazione al momento.</p>';
+        return;
+    }
+
+    let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
+    for (const g of gruppi) {
+        html += `<tr>
+            <td>${g.circolo_nome}</td>
+            <td>${g.giorno}</td>
+            <td>${g.orario}</td>
+            <td>${g.giocatori.join('<br>')}</td>
+            <td>
+                <button class="btn-verde" onclick="prenotazione(${g.gruppo_id}, true)">Campo disponibile</button>
+                <button class="btn-rosso" onclick="prenotazione(${g.gruppo_id}, false)">Campo NON disponibile</button>
+            </td>
+        </tr>`;
+    }
+    html += '</table>';
+    contenitore.innerHTML = html;
+}
+
+async function prenotazione(gruppoId, disponibile) {
+    const percorso = disponibile
+        ? `/gruppi/${gruppoId}/prenotazione/conferma`
+        : `/gruppi/${gruppoId}/prenotazione/fallita`;
+
+    const risposta = await fetch(percorso, { method: 'POST' });
+    const msgDiv = document.getElementById('msg-gruppi');
+
+    if (risposta.ok) {
+        msgDiv.textContent = disponibile
+            ? '✅ Prenotazione confermata, messaggio inviato ai giocatori.'
+            : '↩️ Prenotazione fallita, giocatori rimessi in ricerca.';
+        msgDiv.className = 'messaggio ok';
+    } else {
+        const errore = await risposta.json();
+        msgDiv.textContent = '❌ Errore: ' + (errore.detail || 'operazione non riuscita');
+        msgDiv.className = 'messaggio errore';
+    }
+    msgDiv.style.display = 'block';
+    setTimeout(() => { msgDiv.style.display = 'none'; }, 4000);
+
+    caricaGruppi();
+    caricaPartite();
+}
+
+async function caricaPartite() {
+    const risposta = await fetch('/admin/partite-da-segnare');
+    const partite = await risposta.json();
+    const contenitore = document.getElementById('tabella-partite');
+
+    if (partite.length === 0) {
+        contenitore.innerHTML = '<p class="vuoto">Nessuna partita in attesa di essere segnata come giocata.</p>';
+        return;
+    }
+
+    let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
+    for (const p of partite) {
+        html += `<tr>
+            <td>${p.circolo_nome}</td>
+            <td>${p.giorno}</td>
+            <td>${p.orario}</td>
+            <td>${p.giocatori.join('<br>')}</td>
+            <td><button class="btn-blu" onclick="segnaGiocata(${p.partita_id})">Segna come giocata</button></td>
+        </tr>`;
+    }
+    html += '</table>';
+    contenitore.innerHTML = html;
+}
+
+async function segnaGiocata(partitaId) {
+    const risposta = await fetch(`/partite/${partitaId}/segna-giocata`, { method: 'POST' });
+    const msgDiv = document.getElementById('msg-partite');
+
+    if (risposta.ok) {
+        msgDiv.textContent = '✅ Partita segnata come giocata, richiesta di valutazione inviata.';
+        msgDiv.className = 'messaggio ok';
+    } else {
+        const errore = await risposta.json();
+        msgDiv.textContent = '❌ Errore: ' + (errore.detail || 'operazione non riuscita');
+        msgDiv.className = 'messaggio errore';
+    }
+    msgDiv.style.display = 'block';
+    setTimeout(() => { msgDiv.style.display = 'none'; }, 4000);
+
+    caricaPartite();
+}
+
+// Carica tutto all'apertura della pagina
+caricaGruppi();
+caricaPartite();
+
+// Aggiorna automaticamente ogni 30 secondi, così l'operatore vede le novità senza ricaricare
+setInterval(() => { caricaGruppi(); caricaPartite(); }, 30000);
+</script>
+
+<h2>Gestione Circoli</h2>
+<p class="sottotitolo">Aggiungi, modifica, disattiva o elimina i circoli disponibili per le richieste degli utenti.</p>
+
+<div class="form-circolo">
+    <input type="text" id="c-nome" placeholder="Nome *">
+    <input type="text" id="c-indirizzo" placeholder="Indirizzo">
+    <input type="text" id="c-telefono" placeholder="Telefono">
+    <input type="text" id="c-apertura" placeholder="Apertura (es. 08:00)">
+    <input type="text" id="c-chiusura" placeholder="Chiusura (es. 23:00)">
+    <input type="number" id="c-campi" placeholder="N. campi" min="1">
+    <input type="text" id="c-dotazioni" placeholder="Dotazioni (es. bar, spogliatoi, parcheggio)">
+    <input type="text" id="c-staff" placeholder="Note staff / referente">
+    <button class="btn-blu" onclick="creaCircolo()">+ Aggiungi circolo</button>
+</div>
+<div id="msg-circoli" class="messaggio"></div>
+<div id="tabella-circoli"></div>
+
+<script>
+async function caricaCircoli() {
+    const risposta = await fetch('/circoli');
+    const circoli = await risposta.json();
+    const contenitore = document.getElementById('tabella-circoli');
+
+    if (circoli.length === 0) {
+        contenitore.innerHTML = '<p class="vuoto">Nessun circolo inserito ancora.</p>';
+        return;
+    }
+
+    let html = `<table><tr>
+        <th>Nome</th><th>Indirizzo</th><th>Telefono</th><th>Orari</th>
+        <th>Campi</th><th>Dotazioni</th><th>Note staff</th><th>Stato</th><th>Azioni</th>
+    </tr>`;
+    for (const c of circoli) {
+        const orari = (c.orario_apertura || '?') + ' - ' + (c.orario_chiusura || '?');
+        const stato = c.attivo
+            ? '<span style="color:#1a7a3a">Attivo</span>'
+            : '<span style="color:#999">Disattivato</span>';
+        html += `<tr>
+            <td>${c.nome}</td>
+            <td>${c.indirizzo || ''}</td>
+            <td>${c.telefono || ''}</td>
+            <td>${orari}</td>
+            <td>${c.numero_campi ?? ''}</td>
+            <td>${c.dotazioni || ''}</td>
+            <td>${c.note_staff || ''}</td>
+            <td>${stato}</td>
+            <td>
+                <button class="btn-blu" onclick="toggleAttivo(${c.id}, ${!c.attivo})">${c.attivo ? 'Disattiva' : 'Riattiva'}</button>
+                <button class="btn-rosso" onclick="eliminaCircolo(${c.id})">Elimina</button>
+            </td>
+        </tr>`;
+    }
+    html += '</table>';
+    contenitore.innerHTML = html;
+}
+
+function mostraMessaggioCircoli(testo, ok) {
+    const msgDiv = document.getElementById('msg-circoli');
+    msgDiv.textContent = testo;
+    msgDiv.className = 'messaggio ' + (ok ? 'ok' : 'errore');
+    msgDiv.style.display = 'block';
+    setTimeout(() => { msgDiv.style.display = 'none'; }, 5000);
+}
+
+async function creaCircolo() {
+    const nome = document.getElementById('c-nome').value.trim();
+    if (!nome) {
+        mostraMessaggioCircoli('Il nome del circolo è obbligatorio.', false);
+        return;
+    }
+
+    const corpo = {
+        nome: nome,
+        indirizzo: document.getElementById('c-indirizzo').value || null,
+        telefono: document.getElementById('c-telefono').value || null,
+        orario_apertura: document.getElementById('c-apertura').value || null,
+        orario_chiusura: document.getElementById('c-chiusura').value || null,
+        numero_campi: document.getElementById('c-campi').value ? parseInt(document.getElementById('c-campi').value) : null,
+        dotazioni: document.getElementById('c-dotazioni').value || null,
+        note_staff: document.getElementById('c-staff').value || null,
+    };
+
+    const risposta = await fetch('/circoli', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo),
+    });
+
+    if (risposta.ok) {
+        mostraMessaggioCircoli('✅ Circolo aggiunto.', true);
+        document.querySelectorAll('.form-circolo input').forEach(el => el.value = '');
+        caricaCircoli();
+    } else {
+        const errore = await risposta.json();
+        mostraMessaggioCircoli('❌ ' + (errore.detail || 'Errore durante il salvataggio'), false);
+    }
+}
+
+async function toggleAttivo(id, nuovoStato) {
+    const risposta = await fetch(`/circoli/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attivo: nuovoStato }),
+    });
+    if (risposta.ok) {
+        mostraMessaggioCircoli(nuovoStato ? '✅ Circolo riattivato.' : '✅ Circolo disattivato.', true);
+        caricaCircoli();
+    } else {
+        mostraMessaggioCircoli('❌ Errore durante l\'operazione.', false);
+    }
+}
+
+async function eliminaCircolo(id) {
+    if (!confirm('Eliminare definitivamente questo circolo? L\'operazione non è reversibile.')) {
+        return;
+    }
+    const risposta = await fetch(`/circoli/${id}`, { method: 'DELETE' });
+    if (risposta.ok) {
+        mostraMessaggioCircoli('✅ Circolo eliminato.', true);
+        caricaCircoli();
+    } else {
+        const errore = await risposta.json();
+        mostraMessaggioCircoli('❌ ' + (errore.detail || 'Impossibile eliminare questo circolo'), false);
+    }
+}
+
+caricaCircoli();
+</script>
+
+</body>
+</html>
