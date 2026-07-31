@@ -76,7 +76,7 @@
 </head>
 <body>
 
-<h1>🎾 Pannello Operatore</h1>
+<h1>ߎ Pannello Operatore</h1>
 <p class="sottotitolo">Gestione prenotazioni campi e partite giocate — Sistema Prenotazione Padel</p>
 
 <h2>Gruppi in attesa di prenotazione</h2>
@@ -91,48 +91,61 @@
 
 <script>
 async function caricaGruppi() {
-    const risposta = await fetch('/admin/gruppi-da-prenotare');
-    const gruppi = await risposta.json();
-    const contenitore = document.getElementById('tabella-gruppi');
+    try {
+        const risposta = await fetch('/admin/gruppi-da-prenotare');
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const gruppi = await risposta.json();
+        const contenitore = document.getElementById('tabella-gruppi');
 
-    if (gruppi.length === 0) {
-        contenitore.innerHTML = '<p class="vuoto">Nessun gruppo in attesa di prenotazione al momento.</p>';
-        return;
-    }
+        if (gruppi.length === 0) {
+            contenitore.innerHTML = '<p class="vuoto">Nessun gruppo in attesa di prenotazione al momento.</p>';
+            return;
+        }
 
-    let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
-    for (const g of gruppi) {
-        html += `<tr>
-            <td>${g.circolo_nome}</td>
-            <td>${g.giorno}</td>
-            <td>${g.orario}</td>
-            <td>${g.giocatori.join('<br>')}</td>
-            <td>
-                <button class="btn-verde" onclick="prenotazione(${g.gruppo_id}, true)">Campo disponibile</button>
-                <button class="btn-rosso" onclick="prenotazione(${g.gruppo_id}, false)">Campo NON disponibile</button>
-            </td>
-        </tr>`;
+        let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
+        for (const g of gruppi) {
+            html += `<tr>
+                <td>${g.circolo_nome}</td>
+                <td>${g.giorno}</td>
+                <td>${g.orario}</td>
+                <td>${g.giocatori.join('<br>')}</td>
+                <td>
+                    <button class="btn-verde" onclick="prenotazione(${g.gruppo_id}, true)">Campo disponibile</button>
+                    <button class="btn-rosso" onclick="prenotazione(${g.gruppo_id}, false)">Campo NON disponibile</button>
+                </td>
+            </tr>`;
+        }
+        html += '</table>';
+        contenitore.innerHTML = html;
+    } catch (e) {
+        console.error('Errore caricaGruppi:', e);
+        document.getElementById('tabella-gruppi').innerHTML =
+            `<p class="vuoto">Errore nel caricare i gruppi: ${e.message}</p>`;
     }
-    html += '</table>';
-    contenitore.innerHTML = html;
 }
 
 async function prenotazione(gruppoId, disponibile) {
     const percorso = disponibile
         ? `/gruppi/${gruppoId}/prenotazione/conferma`
         : `/gruppi/${gruppoId}/prenotazione/fallita`;
-
-    const risposta = await fetch(percorso, { method: 'POST' });
     const msgDiv = document.getElementById('msg-gruppi');
 
-    if (risposta.ok) {
-        msgDiv.textContent = disponibile
-            ? '✅ Prenotazione confermata, messaggio inviato ai giocatori.'
-            : '↩️ Prenotazione fallita, giocatori rimessi in ricerca.';
-        msgDiv.className = 'messaggio ok';
-    } else {
-        const errore = await risposta.json();
-        msgDiv.textContent = '❌ Errore: ' + (errore.detail || 'operazione non riuscita');
+    try {
+        const risposta = await fetch(percorso, { method: 'POST' });
+
+        if (risposta.ok) {
+            msgDiv.textContent = disponibile
+                ? '✅ Prenotazione confermata, messaggio inviato ai giocatori.'
+                : '↩️ Prenotazione fallita, giocatori rimessi in ricerca.';
+            msgDiv.className = 'messaggio ok';
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            msgDiv.textContent = '❌ Errore: ' + (errore.detail || `operazione non riuscita (${risposta.status})`);
+            msgDiv.className = 'messaggio errore';
+        }
+    } catch (e) {
+        console.error('Errore prenotazione:', e);
+        msgDiv.textContent = '❌ Impossibile contattare il server: ' + e.message;
         msgDiv.className = 'messaggio errore';
     }
     msgDiv.style.display = 'block';
@@ -143,39 +156,52 @@ async function prenotazione(gruppoId, disponibile) {
 }
 
 async function caricaPartite() {
-    const risposta = await fetch('/admin/partite-da-segnare');
-    const partite = await risposta.json();
-    const contenitore = document.getElementById('tabella-partite');
+    try {
+        const risposta = await fetch('/admin/partite-da-segnare');
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const partite = await risposta.json();
+        const contenitore = document.getElementById('tabella-partite');
 
-    if (partite.length === 0) {
-        contenitore.innerHTML = '<p class="vuoto">Nessuna partita in attesa di essere segnata come giocata.</p>';
-        return;
-    }
+        if (partite.length === 0) {
+            contenitore.innerHTML = '<p class="vuoto">Nessuna partita in attesa di essere segnata come giocata.</p>';
+            return;
+        }
 
-    let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
-    for (const p of partite) {
-        html += `<tr>
-            <td>${p.circolo_nome}</td>
-            <td>${p.giorno}</td>
-            <td>${p.orario}</td>
-            <td>${p.giocatori.join('<br>')}</td>
-            <td><button class="btn-blu" onclick="segnaGiocata(${p.partita_id})">Segna come giocata</button></td>
-        </tr>`;
+        let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
+        for (const p of partite) {
+            html += `<tr>
+                <td>${p.circolo_nome}</td>
+                <td>${p.giorno}</td>
+                <td>${p.orario}</td>
+                <td>${p.giocatori.join('<br>')}</td>
+                <td><button class="btn-blu" onclick="segnaGiocata(${p.partita_id})">Segna come giocata</button></td>
+            </tr>`;
+        }
+        html += '</table>';
+        contenitore.innerHTML = html;
+    } catch (e) {
+        console.error('Errore caricaPartite:', e);
+        document.getElementById('tabella-partite').innerHTML =
+            `<p class="vuoto">Errore nel caricare le partite: ${e.message}</p>`;
     }
-    html += '</table>';
-    contenitore.innerHTML = html;
 }
 
 async function segnaGiocata(partitaId) {
-    const risposta = await fetch(`/partite/${partitaId}/segna-giocata`, { method: 'POST' });
     const msgDiv = document.getElementById('msg-partite');
+    try {
+        const risposta = await fetch(`/partite/${partitaId}/segna-giocata`, { method: 'POST' });
 
-    if (risposta.ok) {
-        msgDiv.textContent = '✅ Partita segnata come giocata, richiesta di valutazione inviata.';
-        msgDiv.className = 'messaggio ok';
-    } else {
-        const errore = await risposta.json();
-        msgDiv.textContent = '❌ Errore: ' + (errore.detail || 'operazione non riuscita');
+        if (risposta.ok) {
+            msgDiv.textContent = '✅ Partita segnata come giocata, richiesta di valutazione inviata.';
+            msgDiv.className = 'messaggio ok';
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            msgDiv.textContent = '❌ Errore: ' + (errore.detail || `operazione non riuscita (${risposta.status})`);
+            msgDiv.className = 'messaggio errore';
+        }
+    } catch (e) {
+        console.error('Errore segnaGiocata:', e);
+        msgDiv.textContent = '❌ Impossibile contattare il server: ' + e.message;
         msgDiv.className = 'messaggio errore';
     }
     msgDiv.style.display = 'block';
@@ -211,41 +237,48 @@ setInterval(() => { caricaGruppi(); caricaPartite(); }, 30000);
 
 <script>
 async function caricaCircoli() {
-    const risposta = await fetch('/circoli');
-    const circoli = await risposta.json();
-    const contenitore = document.getElementById('tabella-circoli');
+    try {
+        const risposta = await fetch('/circoli');
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const circoli = await risposta.json();
+        const contenitore = document.getElementById('tabella-circoli');
 
-    if (circoli.length === 0) {
-        contenitore.innerHTML = '<p class="vuoto">Nessun circolo inserito ancora.</p>';
-        return;
-    }
+        if (circoli.length === 0) {
+            contenitore.innerHTML = '<p class="vuoto">Nessun circolo inserito ancora.</p>';
+            return;
+        }
 
-    let html = `<table><tr>
-        <th>Nome</th><th>Indirizzo</th><th>Telefono</th><th>Orari</th>
-        <th>Campi</th><th>Dotazioni</th><th>Note staff</th><th>Stato</th><th>Azioni</th>
-    </tr>`;
-    for (const c of circoli) {
-        const orari = (c.orario_apertura || '?') + ' - ' + (c.orario_chiusura || '?');
-        const stato = c.attivo
-            ? '<span style="color:#1a7a3a">Attivo</span>'
-            : '<span style="color:#999">Disattivato</span>';
-        html += `<tr>
-            <td>${c.nome}</td>
-            <td>${c.indirizzo || ''}</td>
-            <td>${c.telefono || ''}</td>
-            <td>${orari}</td>
-            <td>${c.numero_campi ?? ''}</td>
-            <td>${c.dotazioni || ''}</td>
-            <td>${c.note_staff || ''}</td>
-            <td>${stato}</td>
-            <td>
-                <button class="btn-blu" onclick="toggleAttivo(${c.id}, ${!c.attivo})">${c.attivo ? 'Disattiva' : 'Riattiva'}</button>
-                <button class="btn-rosso" onclick="eliminaCircolo(${c.id})">Elimina</button>
-            </td>
+        let html = `<table><tr>
+            <th>Nome</th><th>Indirizzo</th><th>Telefono</th><th>Orari</th>
+            <th>Campi</th><th>Dotazioni</th><th>Note staff</th><th>Stato</th><th>Azioni</th>
         </tr>`;
+        for (const c of circoli) {
+            const orari = (c.orario_apertura || '?') + ' - ' + (c.orario_chiusura || '?');
+            const stato = c.attivo
+                ? '<span style="color:#1a7a3a">Attivo</span>'
+                : '<span style="color:#999">Disattivato</span>';
+            html += `<tr>
+                <td>${c.nome}</td>
+                <td>${c.indirizzo || ''}</td>
+                <td>${c.telefono || ''}</td>
+                <td>${orari}</td>
+                <td>${c.numero_campi ?? ''}</td>
+                <td>${c.dotazioni || ''}</td>
+                <td>${c.note_staff || ''}</td>
+                <td>${stato}</td>
+                <td>
+                    <button class="btn-blu" onclick="toggleAttivo(${c.id}, ${!c.attivo})">${c.attivo ? 'Disattiva' : 'Riattiva'}</button>
+                    <button class="btn-rosso" onclick="eliminaCircolo(${c.id})">Elimina</button>
+                </td>
+            </tr>`;
+        }
+        html += '</table>';
+        contenitore.innerHTML = html;
+    } catch (e) {
+        console.error('Errore caricaCircoli:', e);
+        document.getElementById('tabella-circoli').innerHTML =
+            `<p class="vuoto">Errore nel caricare i circoli: ${e.message}</p>`;
     }
-    html += '</table>';
-    contenitore.innerHTML = html;
 }
 
 function mostraMessaggioCircoli(testo, ok) {
@@ -274,33 +307,44 @@ async function creaCircolo() {
         note_staff: document.getElementById('c-staff').value || null,
     };
 
-    const risposta = await fetch('/circoli', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(corpo),
-    });
+    try {
+        const risposta = await fetch('/circoli', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
 
-    if (risposta.ok) {
-        mostraMessaggioCircoli('✅ Circolo aggiunto.', true);
-        document.querySelectorAll('.form-circolo input').forEach(el => el.value = '');
-        caricaCircoli();
-    } else {
-        const errore = await risposta.json();
-        mostraMessaggioCircoli('❌ ' + (errore.detail || 'Errore durante il salvataggio'), false);
+        if (risposta.ok) {
+            mostraMessaggioCircoli('✅ Circolo aggiunto.', true);
+            document.querySelectorAll('.form-circolo input').forEach(el => el.value = '');
+            caricaCircoli();
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            mostraMessaggioCircoli('❌ ' + (errore.detail || `Errore del server (${risposta.status})`), false);
+        }
+    } catch (e) {
+        console.error('Errore creaCircolo:', e);
+        mostraMessaggioCircoli('❌ Impossibile contattare il server: ' + e.message, false);
     }
 }
 
 async function toggleAttivo(id, nuovoStato) {
-    const risposta = await fetch(`/circoli/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attivo: nuovoStato }),
-    });
-    if (risposta.ok) {
-        mostraMessaggioCircoli(nuovoStato ? '✅ Circolo riattivato.' : '✅ Circolo disattivato.', true);
-        caricaCircoli();
-    } else {
-        mostraMessaggioCircoli('❌ Errore durante l\'operazione.', false);
+    try {
+        const risposta = await fetch(`/circoli/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attivo: nuovoStato }),
+        });
+        if (risposta.ok) {
+            mostraMessaggioCircoli(nuovoStato ? '✅ Circolo riattivato.' : '✅ Circolo disattivato.', true);
+            caricaCircoli();
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            mostraMessaggioCircoli('❌ ' + (errore.detail || `Errore del server (${risposta.status})`), false);
+        }
+    } catch (e) {
+        console.error('Errore toggleAttivo:', e);
+        mostraMessaggioCircoli('❌ Impossibile contattare il server: ' + e.message, false);
     }
 }
 
@@ -308,13 +352,18 @@ async function eliminaCircolo(id) {
     if (!confirm('Eliminare definitivamente questo circolo? L\'operazione non è reversibile.')) {
         return;
     }
-    const risposta = await fetch(`/circoli/${id}`, { method: 'DELETE' });
-    if (risposta.ok) {
-        mostraMessaggioCircoli('✅ Circolo eliminato.', true);
-        caricaCircoli();
-    } else {
-        const errore = await risposta.json();
-        mostraMessaggioCircoli('❌ ' + (errore.detail || 'Impossibile eliminare questo circolo'), false);
+    try {
+        const risposta = await fetch(`/circoli/${id}`, { method: 'DELETE' });
+        if (risposta.ok) {
+            mostraMessaggioCircoli('✅ Circolo eliminato.', true);
+            caricaCircoli();
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            mostraMessaggioCircoli('❌ ' + (errore.detail || 'Impossibile eliminare questo circolo'), false);
+        }
+    } catch (e) {
+        console.error('Errore eliminaCircolo:', e);
+        mostraMessaggioCircoli('❌ Impossibile contattare il server: ' + e.message, false);
     }
 }
 
