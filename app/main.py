@@ -38,8 +38,14 @@ app = FastAPI(title="Sistema Prenotazione Padel")
 # IN PRODUZIONE: impostare CORS_ALLOWED_ORIGINS su Railway con l'indirizzo
 # reale del frontend (es. "https://tuosito.up.railway.app"), separando
 # più indirizzi con una virgola se necessario.
-origini_consentite = os.getenv("CORS_ALLOWED_ORIGINS", "*")
-lista_origini = [o.strip() for o in origini_consentite.split(",")] if origini_consentite != "*" else ["*"]
+origini_consentite = os.getenv("CORS_ALLOWED_ORIGINS", "*").strip()
+if not origini_consentite:
+    origini_consentite = "*"
+lista_origini = ["*"] if origini_consentite == "*" else [
+    o.strip() for o in origini_consentite.split(",") if o.strip()
+]
+if not lista_origini:
+    lista_origini = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
