@@ -1,7 +1,7 @@
 """
 Questo file gestisce la connessione al database PostgreSQL.
 Non contiene le tabelle (quelle sono in models.py), solo la "presa elettrica"
-che collega il resto del programma al database.
+che collega il resto del programma al database.pp
 """
 
 import os
