@@ -8,7 +8,7 @@ un errore chiaro, senza che dobbiamo scrivere controlli manuali.
 
 from datetime import date
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class RichiestaCreate(BaseModel):
@@ -52,6 +52,21 @@ class FeedbackCreate(BaseModel):
     voto: Literal["PIU_ALTO", "GIUSTO", "PIU_BASSO"]
 
 
+def _valida_formato_orario(valore):
+    """
+    Verifica che l'orario sia nel formato HH:MM (es. '08:00'), l'unico
+    che PostgreSQL accetta per un campo di tipo TIME. Un valore come '8'
+    o '8.00' verrebbe altrimenti rifiutato dal database con un errore
+    poco chiaro (500) invece che con un messaggio comprensibile.
+    """
+    if valore is None or valore == "":
+        return None
+    import re
+    if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", valore):
+        raise ValueError(f"'{valore}' non è un orario valido. Usa il formato HH:MM, es. 08:00")
+    return valore
+
+
 class CircoloCreate(BaseModel):
     nome: str
     indirizzo: str | None = None
@@ -61,6 +76,9 @@ class CircoloCreate(BaseModel):
     numero_campi: int | None = None
     dotazioni: str | None = Field(None, description="es. 'spogliatoi, bar, parcheggio'")
     note_staff: str | None = None
+
+    _valida_apertura = field_validator("orario_apertura")(_valida_formato_orario)
+    _valida_chiusura = field_validator("orario_chiusura")(_valida_formato_orario)
 
 
 class CircoloUpdate(BaseModel):
@@ -73,3 +91,6 @@ class CircoloUpdate(BaseModel):
     dotazioni: str | None = None
     note_staff: str | None = None
     attivo: bool | None = None
+
+    _valida_apertura = field_validator("orario_apertura")(_valida_formato_orario)
+    _valida_chiusura = field_validator("orario_chiusura")(_valida_formato_orario)
