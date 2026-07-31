@@ -8,6 +8,7 @@ una richiesta dal form web).
 """
 
 from datetime import datetime, timedelta
+import os
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from app.database import get_db, SessionLocal
+from app.database import get_db, SessionLocal, engine, Base
 from app import models, schemas, config
 from app.services.bitmask import crea_bitmask, bitmask_a_fasce_leggibili
 from app.services.conversione_livello import ottieni_livello_playtomic
@@ -32,11 +33,17 @@ from app.matching.feedback import (
 app = FastAPI(title="Sistema Prenotazione Padel")
 
 # CORS: permette al form pubblico (che gira su un dominio/porta diversa)
-# di chiamare questa API dal browser. In produzione, restringere
-# allow_origins all'indirizzo reale del sito invece di usare "*".
+# di chiamare questa API dal browser. In sviluppo locale, se la variabile
+# CORS_ALLOWED_ORIGINS non è impostata, si apre a tutti ("*") per comodità.
+# IN PRODUZIONE: impostare CORS_ALLOWED_ORIGINS su Railway con l'indirizzo
+# reale del frontend (es. "https://tuosito.up.railway.app"), separando
+# più indirizzi con una virgola se necessario.
+origini_consentite = os.getenv("CORS_ALLOWED_ORIGINS", "*")
+lista_origini = [o.strip() for o in origini_consentite.split(",")] if origini_consentite != "*" else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=lista_origini,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -93,8 +100,43 @@ def job_segna_partite_concluse():
         db.close()
 
 
+CONVERSIONI_WANSPORT_PLAYTOMIC = [
+    ("C4", 1.00), ("C3", 1.50), ("C2", 2.00), ("C1", 2.50),
+    ("B4", 3.00), ("B3", 3.50), ("B2", 4.00), ("B1", 4.50),
+    ("A4", 5.00), ("A3", 5.50), ("A2", 6.00), ("A1", 6.50),
+]
+
+
+def inizializza_database_se_necessario():
+    """
+    Crea le tabelle (se non esistono già) e inserisce i valori di
+    conversione Wansport->Playtomic (se la tabella è vuota). Eseguito
+    automaticamente ad ogni avvio del server: è un'operazione sicura da
+    ripetere (non duplica nulla se già fatto), pensata per non dover
+    lanciare init_db.py a mano su un server remoto come Railway.
+    """
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        tabella_vuota = db.query(models.ConversioneWansportPlaytomic).count() == 0
+        if tabella_vuota:
+            for wansport, playtomic in CONVERSIONI_WANSPORT_PLAYTOMIC:
+                db.add(models.ConversioneWansportPlaytomic(
+                    livello_wansport=wansport, livello_playtomic=playtomic
+                ))
+            db.commit()
+            print("[STARTUP] Tabelle create e valori di conversione inseriti.")
+        else:
+            print("[STARTUP] Database già inizializzato.")
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def avvia_scheduler():
+    inizializza_database_se_necessario()
+
     scheduler.add_job(
         job_matching_periodico,
         "interval",
