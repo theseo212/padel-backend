@@ -1,7 +1,7 @@
 """
 Questo file gestisce la connessione al database PostgreSQL.
 Non contiene le tabelle (quelle sono in models.py), solo la "presa elettrica"
-che collega il resto del programma al database.pp
+che collega il resto del programma al database.
 """
 
 import os
@@ -9,35 +9,30 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Carica le variabili dal file .env (es. DATABASE_URL)
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    # LOG DIAGNOSTICO TEMPORANEO: stampa solo i NOMI delle variabili
-    # d'ambiente presenti (mai i valori, per sicurezza), per capire se
-    # Railway ha creato la variabile con un nome diverso da DATABASE_URL.
-    nomi_variabili = sorted(os.environ.keys())
-    print("=== DIAGNOSTICA: DATABASE_URL non trovata ===")
-    print("Variabili d'ambiente disponibili nel container:")
-    for nome in nomi_variabili:
-        print(f"  - {nome}")
-    print("=== FINE DIAGNOSTICA ===")
-
     raise ValueError(
         "DATABASE_URL non trovata. Copia .env.example in .env e inserisci "
         "l'indirizzo del tuo database PostgreSQL."
     )
 
-# L'engine è l'oggetto che sa "come parlare" con PostgreSQL
+# Adatta l'indirizzo per usare il driver psycopg v3 (più compatibile con
+# Python 3.13 e ambienti containerizzati minimali rispetto al vecchio
+# psycopg2-binary, che su alcune immagini non trova la libreria di sistema
+# libpq). Gestisce sia il prefisso "postgres://" (usato da alcuni provider,
+# es. storico Heroku) sia quello standard "postgresql://".
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+if DATABASE_URL.startswith("postgresql://") and "+psycopg" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
 engine = create_engine(DATABASE_URL)
 
-# SessionLocal è una "sessione di lavoro" verso il database:
-# ogni volta che il codice deve leggere/scrivere dati, apre una sessione così
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base è la classe da cui erediteranno tutte le tabelle definite in models.py
 Base = declarative_base()
 
 
@@ -45,7 +40,6 @@ def get_db():
     """
     Funzione di utilità: apre una sessione verso il database, la rende disponibile,
     e la chiude sempre correttamente alla fine (anche in caso di errore).
-    Verrà usata più avanti da FastAPI per ogni richiesta che tocca il database.
     """
     db = SessionLocal()
     try:
