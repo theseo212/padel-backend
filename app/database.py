@@ -15,6 +15,16 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
+    # LOG DIAGNOSTICO TEMPORANEO: stampa solo i NOMI delle variabili
+    # d'ambiente presenti (mai i valori, per sicurezza), per capire se
+    # Railway ha creato la variabile con un nome diverso da DATABASE_URL.
+    nomi_variabili = sorted(os.environ.keys())
+    print("=== DIAGNOSTICA: DATABASE_URL non trovata ===")
+    print("Variabili d'ambiente disponibili nel container:")
+    for nome in nomi_variabili:
+        print(f"  - {nome}")
+    print("=== FINE DIAGNOSTICA ===")
+
     raise ValueError(
         "DATABASE_URL non trovata. Copia .env.example in .env e inserisci "
         "l'indirizzo del tuo database PostgreSQL."
