@@ -51,6 +51,7 @@ class Circolo(Base):
     id = Column(Integer, primary_key=True)
     nome = Column(String(150), nullable=False)
     indirizzo = Column(String(255))
+    provincia = Column(String(10), nullable=True)  # es. "TO", "VC" - per filtrare i circoli su vasta scala
     telefono = Column(String(30))
     orario_apertura = Column(Time)
     orario_chiusura = Column(Time)
