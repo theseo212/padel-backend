@@ -162,6 +162,7 @@ setInterval(() => { caricaGruppi(); }, 30000);
 <div class="form-circolo">
     <input type="text" id="c-nome" placeholder="Nome *">
     <input type="text" id="c-indirizzo" placeholder="Indirizzo">
+    <input type="text" id="c-provincia" placeholder="Provincia (es. TO)" maxlength="10" style="max-width:140px">
     <input type="text" id="c-telefono" placeholder="Telefono">
     <input type="number" id="c-campi" placeholder="N. campi" min="1">
     <input type="text" id="c-note" placeholder="Note (facoltativo)">
@@ -184,7 +185,7 @@ async function caricaCircoli() {
         }
 
         let html = `<table><tr>
-            <th>Nome</th><th>Indirizzo</th><th>Telefono</th>
+            <th>Nome</th><th>Indirizzo</th><th>Provincia</th><th>Telefono</th>
             <th>Campi</th><th>Note</th><th>Stato</th><th>Azioni</th>
         </tr>`;
         for (const c of circoli) {
@@ -194,6 +195,7 @@ async function caricaCircoli() {
             html += `<tr>
                 <td>${c.nome}</td>
                 <td>${c.indirizzo || ''}</td>
+                <td>${c.provincia || ''}</td>
                 <td>${c.telefono || ''}</td>
                 <td>${c.numero_campi ?? ''}</td>
                 <td>${c.dotazioni || ''}</td>
@@ -231,6 +233,7 @@ async function creaCircolo() {
     const corpo = {
         nome: nome,
         indirizzo: document.getElementById('c-indirizzo').value || null,
+        provincia: document.getElementById('c-provincia').value || null,
         telefono: document.getElementById('c-telefono').value || null,
         numero_campi: document.getElementById('c-campi').value ? parseInt(document.getElementById('c-campi').value) : null,
         dotazioni: document.getElementById('c-note').value || null,
