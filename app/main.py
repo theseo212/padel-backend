@@ -638,6 +638,7 @@ def _circolo_a_dict(c: models.Circolo) -> dict:
         "id": c.id,
         "nome": c.nome,
         "indirizzo": c.indirizzo,
+        "provincia": c.provincia,
         "telefono": c.telefono,
         "orario_apertura": str(c.orario_apertura) if c.orario_apertura else None,
         "orario_chiusura": str(c.orario_chiusura) if c.orario_chiusura else None,
@@ -649,17 +650,22 @@ def _circolo_a_dict(c: models.Circolo) -> dict:
 
 
 @app.get("/circoli")
-def lista_circoli(solo_attivi: bool = False, db: Session = Depends(get_db)):
+def lista_circoli(solo_attivi: bool = False, provincia: str | None = None, db: Session = Depends(get_db)):
     """
     Restituisce i circoli. Il pannello operatore chiama questo endpoint
     senza filtro (vuole vedere anche quelli disattivati, per poterli
     riattivare). Il form pubblico dello Step 01 lo chiamerà con
     ?solo_attivi=true, per non proporre agli utenti circoli disattivati.
+    Il filtro ?provincia= è pensato per quando la lista crescerà molto
+    (es. copertura regionale): filtra lato server invece di scaricare
+    sempre tutti i circoli e filtrare solo nel browser.
     Ordinati alfabeticamente per nome (criterio scelto per semplicità).
     """
     query = db.query(models.Circolo)
     if solo_attivi:
         query = query.filter(models.Circolo.attivo == True)
+    if provincia:
+        query = query.filter(models.Circolo.provincia == provincia)
     circoli = query.order_by(models.Circolo.nome).all()
     return [_circolo_a_dict(c) for c in circoli]
 
@@ -670,6 +676,7 @@ def crea_circolo(dati: schemas.CircoloCreate, db: Session = Depends(get_db)):
     circolo = models.Circolo(
         nome=dati.nome,
         indirizzo=dati.indirizzo,
+        provincia=dati.provincia,
         telefono=dati.telefono,
         orario_apertura=dati.orario_apertura,
         orario_chiusura=dati.orario_chiusura,
