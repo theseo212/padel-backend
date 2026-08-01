@@ -120,8 +120,21 @@ def inizializza_database_se_necessario():
     automaticamente ad ogni avvio del server: è un'operazione sicura da
     ripetere (non duplica nulla se già fatto), pensata per non dover
     lanciare init_db.py a mano su un server remoto come Railway.
+
+    NOTA IMPORTANTE: create_all crea solo le tabelle che NON esistono
+    ancora - non aggiunge colonne nuove a tabelle già esistenti. Per
+    questo, ogni volta che aggiungiamo un campo a una tabella che
+    potrebbe già esistere in produzione, serve anche una piccola riga
+    "ALTER TABLE ... ADD COLUMN IF NOT EXISTS" qui sotto, altrimenti il
+    database resta con lo schema vecchio nonostante il codice sia aggiornato.
     """
     Base.metadata.create_all(bind=engine)
+
+    # "Migrazioni leggere": colonne aggiunte dopo la primissima creazione
+    # delle tabelle, che vanno aggiunte anche ai database già esistenti.
+    with engine.connect() as connessione:
+        connessione.execute(text("ALTER TABLE circoli ADD COLUMN IF NOT EXISTS provincia VARCHAR(10)"))
+        connessione.commit()
 
     db = SessionLocal()
     try:
