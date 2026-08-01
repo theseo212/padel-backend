@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Report Partite — Sistema Padel</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    a.torna-indietro { font-size: 13px; color: #2563eb; text-decoration: none; }
+    a.torna-indietro:hover { text-decoration: underline; }
+
+    .filtri {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: end;
+        background: white;
+        padding: 16px;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-top: 16px;
+    }
+    .filtro-campo {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .filtro-campo label {
+        font-size: 12px;
+        color: #555;
+        font-weight: 600;
+    }
+    .filtro-campo input, .filtro-campo select {
+        padding: 8px 10px;
+        border: 1px solid #d5d7db;
+        border-radius: 6px;
+        font-size: 14px;
+    }
+    button {
+        border: none;
+        border-radius: 6px;
+        padding: 9px 14px;
+        font-size: 13px;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    .btn-blu { background: #dbeafe; color: #1d4ed8; }
+    .btn-blu:hover { background: #c3ddfd; }
+    .btn-verde { background: #d5f2df; color: #1a7a3a; }
+    .btn-verde:hover { background: #bfe9cd; }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-top: 16px;
+    }
+    th, td {
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 1px solid #eee;
+        font-size: 14px;
+    }
+    th {
+        background: #fafafa;
+        color: #555;
+        font-weight: 600;
+        cursor: pointer;
+        user-select: none;
+    }
+    th:hover { background: #f0f0f0; }
+    tr:last-child td { border-bottom: none; }
+    .vuoto { color: #999; font-style: italic; padding: 14px; }
+    .contatore { font-size: 13px; color: #666; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<a class="torna-indietro" href="/admin">← Torna al pannello operatore</a>
+<h1>📊 Report Partite</h1>
+<p class="sottotitolo">Elenco delle partite concluse, con filtri e esportazione in CSV (apribile direttamente in Excel).</p>
+
+<div class="filtri">
+    <div class="filtro-campo">
+        <label for="f-giorno-da">Dal giorno</label>
+        <input type="date" id="f-giorno-da">
+    </div>
+    <div class="filtro-campo">
+        <label for="f-giorno-a">Al giorno</label>
+        <input type="date" id="f-giorno-a">
+    </div>
+    <div class="filtro-campo">
+        <label for="f-circolo">Circolo</label>
+        <select id="f-circolo">
+            <option value="">Tutti</option>
+        </select>
+    </div>
+    <div class="filtro-campo">
+        <label for="f-giocatore">Giocatore (nome o cognome)</label>
+        <input type="text" id="f-giocatore" placeholder="es. Mario Rossi">
+    </div>
+    <div class="filtro-campo">
+        <label for="f-stato">Stato</label>
+        <select id="f-stato">
+            <option value="GIOCATA" selected>Giocate (concluse)</option>
+            <option value="PRENOTATA">Prenotate (future)</option>
+            <option value="ANNULLATA">Annullate</option>
+            <option value="">Tutte</option>
+        </select>
+    </div>
+    <button class="btn-blu" onclick="caricaReport()">Applica filtri</button>
+    <button class="btn-verde" onclick="esportaCsv()">⬇ Esporta CSV</button>
+</div>
+
+<div id="contenitore-tabella"></div>
+<div id="contatore" class="contatore"></div>
+
+<script>
+let ordinamentoAttuale = { campo: 'giorno', direzione: 'desc' };
+
+async function caricaCircoli() {
+    try {
+        const risposta = await fetch('/circoli');
+        const circoli = await risposta.json();
+        const select = document.getElementById('f-circolo');
+        for (const c of circoli) {
+            const opzione = document.createElement('option');
+            opzione.value = c.id;
+            opzione.textContent = c.nome;
+            select.appendChild(opzione);
+        }
+    } catch (e) {
+        console.error('Errore caricamento circoli:', e);
+    }
+}
+
+function costruisciQueryString() {
+    const parametri = new URLSearchParams();
+    const giornoDa = document.getElementById('f-giorno-da').value;
+    const giornoA = document.getElementById('f-giorno-a').value;
+    const circolo = document.getElementById('f-circolo').value;
+    const giocatore = document.getElementById('f-giocatore').value;
+    const stato = document.getElementById('f-stato').value;
+
+    if (giornoDa) parametri.set('giorno_da', giornoDa);
+    if (giornoA) parametri.set('giorno_a', giornoA);
+    if (circolo) parametri.set('circolo_id', circolo);
+    if (giocatore) parametri.set('giocatore', giocatore);
+    parametri.set('stato', stato);
+    parametri.set('ordina', ordinamentoAttuale.campo);
+    parametri.set('direzione', ordinamentoAttuale.direzione);
+
+    return parametri.toString();
+}
+
+async function caricaReport() {
+    const contenitore = document.getElementById('contenitore-tabella');
+    const contatore = document.getElementById('contatore');
+    contenitore.innerHTML = '<p class="vuoto">Caricamento…</p>';
+
+    try {
+        const risposta = await fetch('/admin/report-partite?' + costruisciQueryString());
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const partite = await risposta.json();
+
+        if (partite.length === 0) {
+            contenitore.innerHTML = '<p class="vuoto">Nessuna partita trovata con questi filtri.</p>';
+            contatore.textContent = '';
+            return;
+        }
+
+        const freccia = (campo) => ordinamentoAttuale.campo === campo
+            ? (ordinamentoAttuale.direzione === 'desc' ? ' ▼' : ' ▲')
+            : '';
+
+        let html = `<table><tr>
+            <th onclick="cambiaOrdinamento('giorno')">Data e ora${freccia('giorno')}</th>
+            <th onclick="cambiaOrdinamento('circolo')">Circolo${freccia('circolo')}</th>
+            <th onclick="cambiaOrdinamento('giocatore')">Giocatori${freccia('giocatore')}</th>
+            <th>Stato</th>
+        </tr>`;
+        for (const p of partite) {
+            html += `<tr>
+                <td>${p.giorno} alle ${p.orario}</td>
+                <td>${p.circolo_nome}</td>
+                <td>${p.giocatori.join(', ')}</td>
+                <td>${p.stato}</td>
+            </tr>`;
+        }
+        html += '</table>';
+        contenitore.innerHTML = html;
+        contatore.textContent = `${partite.length} partite trovate`;
+    } catch (e) {
+        console.error('Errore caricaReport:', e);
+        contenitore.innerHTML = `<p class="vuoto">Errore nel caricare il report: ${e.message}</p>`;
+    }
+}
+
+function cambiaOrdinamento(campo) {
+    if (ordinamentoAttuale.campo === campo) {
+        ordinamentoAttuale.direzione = ordinamentoAttuale.direzione === 'desc' ? 'asc' : 'desc';
+    } else {
+        ordinamentoAttuale = { campo, direzione: 'desc' };
+    }
+    caricaReport();
+}
+
+function esportaCsv() {
+    window.location.href = '/admin/report-partite/export?' + costruisciQueryString();
+}
+
+caricaCircoli();
+caricaReport();
+</script>
+
+</body>
+</html>
