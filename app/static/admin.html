@@ -84,11 +84,6 @@
 <div id="tabella-gruppi"></div>
 <div id="msg-gruppi" class="messaggio"></div>
 
-<h2>Partite da segnare manualmente come giocate (eccezioni)</h2>
-<p class="sottotitolo">Il sistema segna automaticamente ogni partita come giocata 90 minuti dopo l'orario di inizio — non serve fare nulla in condizioni normali. Usa questa tabella solo per casi eccezionali (es. partita finita molto prima o dopo il previsto).</p>
-<div id="tabella-partite"></div>
-<div id="msg-partite" class="messaggio"></div>
-
 <script>
 async function caricaGruppi() {
     try {
@@ -152,70 +147,13 @@ async function prenotazione(gruppoId, disponibile) {
     setTimeout(() => { msgDiv.style.display = 'none'; }, 4000);
 
     caricaGruppi();
-    caricaPartite();
-}
-
-async function caricaPartite() {
-    try {
-        const risposta = await fetch('/admin/partite-da-segnare');
-        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
-        const partite = await risposta.json();
-        const contenitore = document.getElementById('tabella-partite');
-
-        if (partite.length === 0) {
-            contenitore.innerHTML = '<p class="vuoto">Nessuna partita in attesa di essere segnata come giocata.</p>';
-            return;
-        }
-
-        let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
-        for (const p of partite) {
-            html += `<tr>
-                <td>${p.circolo_nome}</td>
-                <td>${p.giorno}</td>
-                <td>${p.orario}</td>
-                <td>${p.giocatori.join('<br>')}</td>
-                <td><button class="btn-blu" onclick="segnaGiocata(${p.partita_id})">Segna come giocata</button></td>
-            </tr>`;
-        }
-        html += '</table>';
-        contenitore.innerHTML = html;
-    } catch (e) {
-        console.error('Errore caricaPartite:', e);
-        document.getElementById('tabella-partite').innerHTML =
-            `<p class="vuoto">Errore nel caricare le partite: ${e.message}</p>`;
-    }
-}
-
-async function segnaGiocata(partitaId) {
-    const msgDiv = document.getElementById('msg-partite');
-    try {
-        const risposta = await fetch(`/partite/${partitaId}/segna-giocata`, { method: 'POST' });
-
-        if (risposta.ok) {
-            msgDiv.textContent = '✅ Partita segnata come giocata, richiesta di valutazione inviata.';
-            msgDiv.className = 'messaggio ok';
-        } else {
-            const errore = await risposta.json().catch(() => ({}));
-            msgDiv.textContent = '❌ Errore: ' + (errore.detail || `operazione non riuscita (${risposta.status})`);
-            msgDiv.className = 'messaggio errore';
-        }
-    } catch (e) {
-        console.error('Errore segnaGiocata:', e);
-        msgDiv.textContent = '❌ Impossibile contattare il server: ' + e.message;
-        msgDiv.className = 'messaggio errore';
-    }
-    msgDiv.style.display = 'block';
-    setTimeout(() => { msgDiv.style.display = 'none'; }, 4000);
-
-    caricaPartite();
 }
 
 // Carica tutto all'apertura della pagina
 caricaGruppi();
-caricaPartite();
 
 // Aggiorna automaticamente ogni 30 secondi, così l'operatore vede le novità senza ricaricare
-setInterval(() => { caricaGruppi(); caricaPartite(); }, 30000);
+setInterval(() => { caricaGruppi(); }, 30000);
 </script>
 
 <h2>Gestione Circoli</h2>
@@ -225,11 +163,8 @@ setInterval(() => { caricaGruppi(); caricaPartite(); }, 30000);
     <input type="text" id="c-nome" placeholder="Nome *">
     <input type="text" id="c-indirizzo" placeholder="Indirizzo">
     <input type="text" id="c-telefono" placeholder="Telefono">
-    <input type="time" id="c-apertura" placeholder="Apertura">
-    <input type="time" id="c-chiusura" placeholder="Chiusura">
     <input type="number" id="c-campi" placeholder="N. campi" min="1">
-    <input type="text" id="c-dotazioni" placeholder="Dotazioni (es. bar, spogliatoi, parcheggio)">
-    <input type="text" id="c-staff" placeholder="Note staff / referente">
+    <input type="text" id="c-note" placeholder="Note (facoltativo)">
     <button class="btn-blu" onclick="creaCircolo()">+ Aggiungi circolo</button>
 </div>
 <div id="msg-circoli" class="messaggio"></div>
@@ -249,11 +184,10 @@ async function caricaCircoli() {
         }
 
         let html = `<table><tr>
-            <th>Nome</th><th>Indirizzo</th><th>Telefono</th><th>Orari</th>
-            <th>Campi</th><th>Dotazioni</th><th>Note staff</th><th>Stato</th><th>Azioni</th>
+            <th>Nome</th><th>Indirizzo</th><th>Telefono</th>
+            <th>Campi</th><th>Note</th><th>Stato</th><th>Azioni</th>
         </tr>`;
         for (const c of circoli) {
-            const orari = (c.orario_apertura || '?') + ' - ' + (c.orario_chiusura || '?');
             const stato = c.attivo
                 ? '<span style="color:#1a7a3a">Attivo</span>'
                 : '<span style="color:#999">Disattivato</span>';
@@ -261,10 +195,8 @@ async function caricaCircoli() {
                 <td>${c.nome}</td>
                 <td>${c.indirizzo || ''}</td>
                 <td>${c.telefono || ''}</td>
-                <td>${orari}</td>
                 <td>${c.numero_campi ?? ''}</td>
                 <td>${c.dotazioni || ''}</td>
-                <td>${c.note_staff || ''}</td>
                 <td>${stato}</td>
                 <td>
                     <button class="btn-blu" onclick="toggleAttivo(${c.id}, ${!c.attivo})">${c.attivo ? 'Disattiva' : 'Riattiva'}</button>
@@ -300,11 +232,8 @@ async function creaCircolo() {
         nome: nome,
         indirizzo: document.getElementById('c-indirizzo').value || null,
         telefono: document.getElementById('c-telefono').value || null,
-        orario_apertura: document.getElementById('c-apertura').value || null,
-        orario_chiusura: document.getElementById('c-chiusura').value || null,
         numero_campi: document.getElementById('c-campi').value ? parseInt(document.getElementById('c-campi').value) : null,
-        dotazioni: document.getElementById('c-dotazioni').value || null,
-        note_staff: document.getElementById('c-staff').value || null,
+        dotazioni: document.getElementById('c-note').value || null,
     };
 
     try {
