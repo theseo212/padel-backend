@@ -9,11 +9,13 @@ una richiesta dal form web).
 
 from datetime import datetime, timedelta
 import os
+import csv
+import io
 
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -198,6 +200,14 @@ def pannello_operatore():
     """Serve la pagina web del pannello operatore."""
     import os
     percorso = os.path.join(os.path.dirname(__file__), "static", "admin.html")
+    return FileResponse(percorso)
+
+
+@app.get("/admin/report")
+def pagina_report():
+    """Serve la pagina web del report partite."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "report.html")
     return FileResponse(percorso)
 
 
@@ -754,3 +764,127 @@ def elimina_circolo(circolo_id: int, db: Session = Depends(get_db)):
     db.delete(circolo)
     db.commit()
     return {"messaggio": "Circolo eliminato definitivamente."}
+
+
+def _cerca_partite_per_report(
+    db: Session,
+    giorno_da: str | None,
+    giorno_a: str | None,
+    circolo_id: int | None,
+    giocatore: str | None,
+    stato: str,
+    ordina: str,
+    direzione: str,
+) -> list[dict]:
+    """
+    Funzione condivisa tra la visualizzazione a schermo e l'esportazione CSV
+    del report partite. Filtra per data, circolo, giocatore (ricerca parziale
+    su nome+cognome) e stato, poi ordina secondo il criterio richiesto.
+    """
+    query = db.query(models.Partita)
+    if stato:
+        query = query.filter(models.Partita.stato == stato)
+    if giorno_da:
+        try:
+            data_da = datetime.strptime(giorno_da, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Data non valida: '{giorno_da}', usa il formato AAAA-MM-GG")
+        query = query.filter(models.Partita.giorno >= data_da)
+    if giorno_a:
+        try:
+            data_a = datetime.strptime(giorno_a, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Data non valida: '{giorno_a}', usa il formato AAAA-MM-GG")
+        query = query.filter(models.Partita.giorno <= data_a)
+    if circolo_id:
+        query = query.filter(models.Partita.circolo_id == circolo_id)
+
+    partite = query.all()
+
+    risultato = []
+    for p in partite:
+        circolo = db.query(models.Circolo).filter(models.Circolo.id == p.circolo_id).first()
+        gruppo = (
+            db.query(models.Gruppo)
+            .options(joinedload(models.Gruppo.membri).joinedload(models.GruppoMembro.utente))
+            .filter(models.Gruppo.id == p.gruppo_id)
+            .first()
+        )
+        giocatori = [f"{m.utente.nome} {m.utente.cognome}" for m in gruppo.membri] if gruppo else []
+
+        if giocatore:
+            testo_ricerca = giocatore.lower()
+            if not any(testo_ricerca in g.lower() for g in giocatori):
+                continue
+
+        risultato.append({
+            "partita_id": p.id,
+            "giorno": str(p.giorno),
+            "orario": str(p.ora_inizio),
+            "circolo_nome": circolo.nome if circolo else "?",
+            "giocatori": giocatori,
+            "stato": p.stato,
+        })
+
+    reverse = (direzione == "desc")
+    if ordina == "circolo":
+        risultato.sort(key=lambda r: r["circolo_nome"].lower(), reverse=reverse)
+    elif ordina == "giocatore":
+        risultato.sort(key=lambda r: (r["giocatori"][0].lower() if r["giocatori"] else ""), reverse=reverse)
+    else:  # default: giorno (+ orario come criterio secondario)
+        risultato.sort(key=lambda r: (r["giorno"], r["orario"]), reverse=reverse)
+
+    return risultato
+
+
+@app.get("/admin/report-partite")
+def report_partite(
+    giorno_da: str | None = None,
+    giorno_a: str | None = None,
+    circolo_id: int | None = None,
+    giocatore: str | None = None,
+    stato: str = "GIOCATA",
+    ordina: str = "giorno",
+    direzione: str = "desc",
+    db: Session = Depends(get_db),
+):
+    """
+    Restituisce l'elenco delle partite (di default quelle concluse, stato
+    GIOCATA) filtrate e ordinate secondo i parametri passati. Usato dalla
+    pagina di report del pannello operatore.
+    """
+    return _cerca_partite_per_report(db, giorno_da, giorno_a, circolo_id, giocatore, stato, ordina, direzione)
+
+
+@app.get("/admin/report-partite/export")
+def esporta_report_partite_csv(
+    giorno_da: str | None = None,
+    giorno_a: str | None = None,
+    circolo_id: int | None = None,
+    giocatore: str | None = None,
+    stato: str = "GIOCATA",
+    ordina: str = "giorno",
+    direzione: str = "desc",
+    db: Session = Depends(get_db),
+):
+    """
+    Stessa ricerca di /admin/report-partite, ma restituisce un file CSV
+    scaricabile (si apre direttamente in Excel/Fogli Google) invece del
+    JSON per la pagina web.
+    """
+    righe = _cerca_partite_per_report(db, giorno_da, giorno_a, circolo_id, giocatore, stato, ordina, direzione)
+
+    buffer = io.StringIO()
+    scrittore = csv.writer(buffer, delimiter=';')  # ';' per compatibilità con Excel in italiano
+    scrittore.writerow(["Data", "Ora", "Circolo", "Giocatore 1", "Giocatore 2", "Giocatore 3", "Giocatore 4", "Stato"])
+
+    for riga in righe:
+        giocatori = riga["giocatori"] + [""] * (4 - len(riga["giocatori"]))  # riempie fino a 4 colonne
+        scrittore.writerow([riga["giorno"], riga["orario"], riga["circolo_nome"], *giocatori[:4], riga["stato"]])
+
+    contenuto = buffer.getvalue()
+    return Response(
+        content=contenuto,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=report_partite.csv"},
+    )
