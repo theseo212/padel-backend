@@ -198,6 +198,44 @@ def health_check_database(db: Session = Depends(get_db)):
     return {"database_collegato": risultato == 1}
 
 
+@app.get("/utenti/profilo")
+def profilo_utente(whatsapp_numero: str, db: Session = Depends(get_db)):
+    """
+    Cerca un utente per numero WhatsApp e restituisce i suoi dati fissi
+    (nome, cognome, livello, lato - immutabili dopo la prima richiesta,
+    punto 17) più i dettagli della sua ultima richiesta (tipo di partita
+    e circoli scelti). Usato dal form pubblico per riconoscere un utente
+    già registrato e non fargli riscrivere tutto da capo.
+    """
+    utente = db.query(models.Utente).filter(
+        models.Utente.whatsapp_numero == whatsapp_numero
+    ).first()
+
+    if utente is None:
+        return {"esiste": False}
+
+    ultima_richiesta = (
+        db.query(models.Richiesta)
+        .filter(models.Richiesta.utente_id == utente.id)
+        .order_by(models.Richiesta.data_creazione.desc())
+        .first()
+    )
+
+    return {
+        "esiste": True,
+        "nome": utente.nome,
+        "cognome": utente.cognome,
+        "livello_playtomic": float(utente.livello_playtomic),
+        "livello_dichiarato_scala": utente.livello_dichiarato_scala,
+        "livello_dichiarato_originale": utente.livello_dichiarato_originale,
+        "lato_preferito": utente.lato_preferito,
+        "ultima_richiesta": {
+            "tipo_partita": ultima_richiesta.tipo_partita,
+            "circoli_ids": [c.id for c in ultima_richiesta.circoli],
+        } if ultima_richiesta else None,
+    }
+
+
 @app.post("/richieste", response_model=schemas.RichiestaResponse)
 def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db)):
     """
@@ -273,6 +311,12 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
 
     # --- 2. Se l'utente esiste già, il livello NON viene mai ri-scritto (punto 17) ---
     # (nessuna azione necessaria: semplicemente non tocchiamo utente.livello_playtomic)
+    #
+    # Il lato di gioco preferito, invece, PUÒ cambiare nel tempo (a differenza
+    # del livello): non è una questione di equità nel matching come il livello,
+    # è solo una preferenza personale che può cambiare con l'esperienza.
+    if not utente_nuovo:
+        utente.lato_preferito = dati.lato_preferito
 
     # --- 3. Costruisce il bitmask e crea la richiesta ---
     try:
