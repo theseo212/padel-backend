@@ -70,6 +70,7 @@ def _valida_formato_orario(valore):
 class CircoloCreate(BaseModel):
     nome: str
     indirizzo: str | None = None
+    provincia: str | None = Field(None, description="es. 'TO', 'VC'")
     telefono: str | None = None
     orario_apertura: str | None = Field(None, description="es. '08:00'")
     orario_chiusura: str | None = Field(None, description="es. '23:00'")
@@ -84,6 +85,7 @@ class CircoloCreate(BaseModel):
 class CircoloUpdate(BaseModel):
     nome: str | None = None
     indirizzo: str | None = None
+    provincia: str | None = None
     telefono: str | None = None
     orario_apertura: str | None = None
     orario_chiusura: str | None = None
