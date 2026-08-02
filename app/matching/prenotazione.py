@@ -63,11 +63,11 @@ def conferma_prenotazione(db: Session, gruppo_id: int) -> models.Partita:
         richiesta.stato = "CONFERMATA"
 
     testo = (
-        f"✅ Prenotazione confermata!\n"
+        f"✅ Fatto! Ho confermato la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Il pagamento del campo si effettua direttamente al circolo all'arrivo, come di consueto.\n"
-        f"Buona partita! 🎾"
+        f"Buona partita! ߎ"
     )
     for membro in gruppo.membri:
         invia_prenotazione_confermata(membro.utente.whatsapp_numero, testo)
@@ -106,7 +106,7 @@ def fallisce_prenotazione(db: Session, gruppo_id: int):
 
     testo = (
         f"❌ Partita annullata: il campo al circolo {circolo.nome} "
-        f"non è risultato disponibile. Stiamo cercando una nuova soluzione per te."
+        f"non è risultato disponibile. Sto cercando una nuova soluzione per te."
     )
     for membro in gruppo.membri:
         invia_prenotazione_fallita(membro.utente.whatsapp_numero, testo)
