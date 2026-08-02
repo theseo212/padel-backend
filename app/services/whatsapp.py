@@ -61,3 +61,7 @@ def invia_richiesta_feedback(numero_whatsapp: str, testo: str):
 def invia_promemoria_feedback(numero_whatsapp: str):
     print(f"[SIMULAZIONE WHATSAPP] Invio a {numero_whatsapp}: "
           f"Promemoria: non hai ancora valutato i tuoi compagni dell'ultima partita.")
+
+
+def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str):
+    print(f"[SIMULAZIONE WHATSAPP - PROMEMORIA] Invio a {numero_whatsapp}:\n{testo}")
