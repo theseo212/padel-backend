@@ -4,6 +4,14 @@ in un unico posto. Se in futuro vuoi cambiare un numero (es. la durata
 di validità dell'OTP), lo cambi solo qui, senza toccare il resto del codice.
 """
 
+import os
+
+# === INDIRIZZO PUBBLICO DEL FORM (usato nei link dei messaggi WhatsApp) ===
+PUBLIC_FORM_URL = os.getenv("PUBLIC_FORM_URL", "https://padel-frontend-production-913f.up.railway.app")
+
+# === INDIRIZZO PUBBLICO DI QUESTO BACKEND (per i link "clicca per annullare") ===
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "https://web-production-3d15f.up.railway.app")
+
 # === FASCIA ORARIA GESTITA DAL SISTEMA ===
 ORA_INIZIO_GIORNATA = 7    # 07:00
 ORA_FINE_GIORNATA = 23     # 23:00
