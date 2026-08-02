@@ -8,7 +8,7 @@ SQLAlchemy si occupa di tradurle in tabelle reali sul database.
 """
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, Numeric, Date, Time,
+    Column, Integer, BigInteger, String, Boolean, Numeric, Date, Time,
     DateTime, ForeignKey, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
@@ -69,13 +69,14 @@ class Richiesta(Base):
 
     tipo_partita = Column(String(15), nullable=False)  # MASCHILE, FEMMINILE, MISTA
     giorno = Column(Date, nullable=False)
-    disponibilita_bitmask = Column(Integer, nullable=False)  # 32 bit, slot da 30 min
+    disponibilita_bitmask = Column(BigInteger, nullable=False)  # 32 bit, slot da 30 min
 
     stato = Column(String(20), default="IN_RICERCA")
     # IN_RICERCA, LOCKED, CONFERMATA, SCADUTA, ANNULLATA
 
     data_creazione = Column(DateTime, server_default=func.now())
     tolleranza_corrente = Column(Numeric(3, 2), default=0.5)
+    promemoria_mancata_partita_inviato = Column(Boolean, default=False)
 
     utente = relationship("Utente", back_populates="richieste")
     circoli = relationship("Circolo", secondary="richieste_circoli")
