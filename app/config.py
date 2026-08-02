@@ -6,11 +6,18 @@ di validità dell'OTP), lo cambi solo qui, senza toccare il resto del codice.
 
 import os
 
+# === IDENTITÀ DEL SERVIZIO ===
+# Tutti i messaggi WhatsApp vengono scritti come se li scrivesse "Anna" in
+# prima persona (una specie di segretaria personale), non un "sistema"
+# impersonale. Il nome del brand e la firma sono centralizzati qui.
+NOME_BRAND = "AnnaPadel"
+FIRMA_MESSAGGIO = "\n\nߒ La tua Anna"
+
 # === INDIRIZZO PUBBLICO DEL FORM (usato nei link dei messaggi WhatsApp) ===
 PUBLIC_FORM_URL = os.getenv("PUBLIC_FORM_URL", "https://padel-frontend-production-913f.up.railway.app")
 
 # === INDIRIZZO PUBBLICO DI QUESTO BACKEND (per i link "clicca per annullare") ===
-BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "https://web-production-3d15f.up.railway.app")
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "https://web02-production-7527.up.railway.app")
 
 # === TWILIO (invio WhatsApp reale) ===
 # Se questi valori non sono impostati, il sistema resta in modalità
