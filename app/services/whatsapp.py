@@ -1,6 +1,10 @@
 """
 Gestisce l'invio dei messaggi WhatsApp.
 
+Tutti i messaggi sono scritti come se li scrivesse "Anna" in prima persona
+(una specie di segretaria personale), non un "sistema" impersonale - e
+portano tutti la sua firma in fondo (vedi config.FIRMA_MESSAGGIO).
+
 Tre modalità possibili, scelte automaticamente in base a cosa è configurato:
 1. NESSUNA credenziale Twilio -> simulazione (stampa nei log), comportamento
    di riserva usato durante tutto lo sviluppo.
@@ -16,7 +20,7 @@ import json
 import random
 import string
 from app.config import (
-    OTP_LUNGHEZZA, OTP_DURATA_VALIDITA_MINUTI,
+    OTP_LUNGHEZZA, OTP_DURATA_VALIDITA_MINUTI, NOME_BRAND, FIRMA_MESSAGGIO,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER,
     TEMPLATE_OTP, TEMPLATE_GENERICO, TEMPLATE_PROPOSTA_GRUPPO,
 )
@@ -61,18 +65,27 @@ def _invia_via_twilio(numero_whatsapp: str, testo: str, content_sid: str | None 
 
 
 def _invia_generico(numero_whatsapp: str, testo: str, etichetta_simulazione: str = "", content_sid: str | None = None):
-    """Punto unico usato da tutti i messaggi "informativi"."""
+    """
+    Punto unico usato da tutti i messaggi "informativi". Aggiunge sempre
+    la firma di Anna in fondo, così non serve ricordarsene in ogni testo.
+    """
+    testo_firmato = testo + FIRMA_MESSAGGIO
+
     if _TWILIO_CONFIGURATO:
-        inviato = _invia_via_twilio(numero_whatsapp, testo, content_sid=content_sid)
+        inviato = _invia_via_twilio(numero_whatsapp, testo_firmato, content_sid=content_sid)
         if inviato:
             return
 
     prefisso = f"[SIMULAZIONE WHATSAPP{etichetta_simulazione}]"
-    print(f"{prefisso} Invio a {numero_whatsapp}:\n{testo}")
+    print(f"{prefisso} Invio a {numero_whatsapp}:\n{testo_firmato}")
 
 
 def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str):
-    testo = f"Il tuo codice di verifica per Sistema Padel è {codice_otp}, valido {OTP_DURATA_VALIDITA_MINUTI} minuti."
+    testo = (
+        f"Ciao! Sono Anna ߑ Il tuo codice di verifica per {NOME_BRAND} è {codice_otp}, "
+        f"valido {OTP_DURATA_VALIDITA_MINUTI} minuti."
+    ) + FIRMA_MESSAGGIO
+
     if _TWILIO_CONFIGURATO:
         inviato = _invia_via_twilio(numero_whatsapp, testo, content_sid=TEMPLATE_OTP)
         if inviato:
@@ -92,17 +105,24 @@ def invia_proposta_gruppo(numero_whatsapp: str, testo_proposta: str):
     "RIFIUTA" - il webhook la riconosce comunque (vedi gestione_gruppi.py),
     quindi funziona bene anche senza bottoni cliccabili.
     """
+    testo_firmato = testo_proposta + FIRMA_MESSAGGIO
+
     if _TWILIO_CONFIGURATO:
-        inviato = _invia_via_twilio(numero_whatsapp, testo_proposta, content_sid=TEMPLATE_PROPOSTA_GRUPPO)
+        inviato = _invia_via_twilio(numero_whatsapp, testo_firmato, content_sid=TEMPLATE_PROPOSTA_GRUPPO)
         if inviato:
             return
 
     print(f"[SIMULAZIONE WHATSAPP - PROPOSTA con bottoni Conferma/Rifiuta] "
-          f"Invio a {numero_whatsapp}:\n{testo_proposta}")
+          f"Invio a {numero_whatsapp}:\n{testo_firmato}")
 
 
 def invia_annullamento_gruppo(numero_whatsapp: str, motivo: str):
-    _invia_generico(numero_whatsapp, f"Partita annullata. Motivo: {motivo}", content_sid=TEMPLATE_GENERICO)
+    _invia_generico(
+        numero_whatsapp,
+        f"Ops! Ho dovuto annullare questa partita. Motivo: {motivo}\n"
+        f"Non preoccuparti, continuo subito a cercarti nuovi compagni! ߎ",
+        content_sid=TEMPLATE_GENERICO,
+    )
 
 
 def invia_gruppo_confermato(numero_whatsapp: str, testo: str):
@@ -132,7 +152,7 @@ def invia_richiesta_feedback(numero_whatsapp: str, testo: str):
 def invia_promemoria_feedback(numero_whatsapp: str):
     _invia_generico(
         numero_whatsapp,
-        "Promemoria: non hai ancora valutato i tuoi compagni dell'ultima partita.",
+        "Psst! Non dimenticare di valutare i tuoi compagni dell'ultima partita ߘ",
         content_sid=TEMPLATE_GENERICO,
     )
 
