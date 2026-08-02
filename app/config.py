@@ -1,7 +1,7 @@
 """
 Tutti i valori che potrebbero servire regolare nel tempo sono qui,
 in un unico posto. Se in futuro vuoi cambiare un numero (es. la durata
-di validità dell'OTP), lo cambi solo qui, senza toccare il resto del codice.
+di validità dell'OTP), lo cambi solo qui, ssenza toccare il resto del codice.
 """
 
 import os
