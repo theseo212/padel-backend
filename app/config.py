@@ -12,6 +12,25 @@ PUBLIC_FORM_URL = os.getenv("PUBLIC_FORM_URL", "https://padel-frontend-productio
 # === INDIRIZZO PUBBLICO DI QUESTO BACKEND (per i link "clicca per annullare") ===
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "https://web-production-3d15f.up.railway.app")
 
+# === TWILIO (invio WhatsApp reale) ===
+# Se questi valori non sono impostati, il sistema resta in modalità
+# "simulazione" (stampa nei log invece di inviare davvero) - lo stesso
+# comportamento usato durante tutto lo sviluppo. Appena vengono impostati
+# su Railway, l'invio diventa reale senza bisogno di altre modifiche.
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")  # es. "whatsapp:+14155238886"
+
+# Servono solo 3 template approvati (non uno per ogni tipo di messaggio):
+# 1) OTP - struttura fissa con codice e durata
+# 2) GENERICO - un contenitore di testo libero, riusato per tutti i messaggi
+#    informativi (riepiloghi, conferme, annullamenti, promemoria, ecc.) -
+#    più semplice da approvare una volta sola invece di tanti template simili
+# 3) PROPOSTA_GRUPPO - come il generico, ma con i due bottoni Conferma/Rifiuta
+TEMPLATE_OTP = os.getenv("TEMPLATE_OTP")
+TEMPLATE_GENERICO = os.getenv("TEMPLATE_GENERICO")
+TEMPLATE_PROPOSTA_GRUPPO = os.getenv("TEMPLATE_PROPOSTA_GRUPPO")
+
 # === FASCIA ORARIA GESTITA DAL SISTEMA ===
 ORA_INIZIO_GIORNATA = 7    # 07:00
 ORA_FINE_GIORNATA = 23     # 23:00
