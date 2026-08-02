@@ -155,3 +155,43 @@ def controlla_timeout_gruppi(db: Session):
         _annulla_gruppo(db, gruppo, motivo="Tempo scaduto: non tutti hanno confermato in tempo")
 
     return len(gruppi_scaduti)
+
+
+def rispondi_a_gruppo_da_whatsapp(db: Session, numero_whatsapp: str, testo_risposta: str) -> dict:
+    """
+    Collega una risposta arrivata realmente su WhatsApp (via webhook Twilio)
+    alla stessa logica già usata da rispondi_a_gruppo. Invece di ricevere
+    già gruppo_id/utente_id (che l'utente non manda), li ricava da soli:
+    - trova l'utente dal numero di telefono che ha scritto
+    - trova la SUA proposta attualmente in attesa di risposta (grazie al
+      meccanismo di lock, un utente ha al massimo una proposta PROPOSTO
+      alla volta, quindi non c'è ambiguità)
+    - interpreta il testo del bottone premuto (Conferma/Rifiuta)
+    """
+    utente = db.query(models.Utente).filter(models.Utente.whatsapp_numero == numero_whatsapp).first()
+    if utente is None:
+        raise ValueError(f"Nessun utente trovato con il numero {numero_whatsapp}")
+
+    membro = (
+        db.query(models.GruppoMembro)
+        .join(models.Gruppo, models.Gruppo.id == models.GruppoMembro.gruppo_id)
+        .filter(
+            models.GruppoMembro.utente_id == utente.id,
+            models.GruppoMembro.stato_conferma == "IN_ATTESA",
+            models.Gruppo.stato == "PROPOSTO",
+        )
+        .order_by(models.Gruppo.data_proposta.desc())
+        .first()
+    )
+    if membro is None:
+        raise ValueError(f"Nessuna proposta in attesa di risposta trovata per {numero_whatsapp}")
+
+    testo_normalizzato = testo_risposta.strip().lower()
+    if "conferm" in testo_normalizzato:
+        risposta = "CONFERMA"
+    elif "rifiut" in testo_normalizzato:
+        risposta = "RIFIUTO"
+    else:
+        raise ValueError(f"Risposta '{testo_risposta}' non riconosciuta (atteso Conferma o Rifiuta)")
+
+    return rispondi_a_gruppo(db, membro.gruppo_id, membro.utente_id, risposta)
