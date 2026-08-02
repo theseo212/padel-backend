@@ -31,6 +31,7 @@ from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
     controlla_partite_da_segnare_automaticamente,
 )
+from app.matching.promemoria_disponibilita import controlla_promemoria_mancata_partita
 
 app = FastAPI(title="Sistema Prenotazione Padel")
 
@@ -108,6 +109,21 @@ def job_segna_partite_concluse():
         db.close()
 
 
+def job_promemoria_mancata_partita():
+    """
+    Funzione eseguita automaticamente ogni 5 minuti: avvisa gli utenti
+    che, a un'ora dall'inizio della loro fascia oraria, non hanno ancora
+    trovato una partita.
+    """
+    db = SessionLocal()
+    try:
+        n = controlla_promemoria_mancata_partita(db)
+        if n:
+            print(f"[PROMEMORIA] {n} promemoria di mancata partita inviati.")
+    finally:
+        db.close()
+
+
 CONVERSIONI_WANSPORT_PLAYTOMIC = [
     ("C4", 1.00), ("C3", 1.50), ("C2", 2.00), ("C1", 2.50),
     ("B4", 3.00), ("B3", 3.50), ("B2", 4.00), ("B1", 4.50),
@@ -136,6 +152,14 @@ def inizializza_database_se_necessario():
     # delle tabelle, che vanno aggiunte anche ai database già esistenti.
     with engine.connect() as connessione:
         connessione.execute(text("ALTER TABLE circoli ADD COLUMN IF NOT EXISTS provincia VARCHAR(10)"))
+        connessione.execute(text(
+            "ALTER TABLE richieste ADD COLUMN IF NOT EXISTS promemoria_mancata_partita_inviato BOOLEAN DEFAULT FALSE"
+        ))
+        # Bug corretto: il bitmask usa fino al bit 31, che supera il massimo
+        # di un INTEGER con segno. BIGINT lo gestisce correttamente.
+        connessione.execute(text(
+            "ALTER TABLE richieste ALTER COLUMN disponibilita_bitmask TYPE BIGINT"
+        ))
         connessione.commit()
 
     db = SessionLocal()
@@ -181,6 +205,12 @@ def avvia_scheduler():
         "interval",
         minutes=5,
         id="segna_partite_concluse",
+    )
+    scheduler.add_job(
+        job_promemoria_mancata_partita,
+        "interval",
+        minutes=5,
+        id="promemoria_mancata_partita",
     )
     scheduler.start()
 
@@ -434,20 +464,11 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
     return {"messaggio": "Numero verificato con successo."}
 
 
-@app.post("/richieste/{richiesta_id}/annulla")
-def annulla_richiesta(richiesta_id: int, db: Session = Depends(get_db)):
+def _annulla_richiesta_logica(richiesta_id: int, db: Session) -> dict:
     """
-    Permette a un utente di annullare una propria richiesta, tipicamente
-    dopo essere stato avvisato di averne già una attiva per lo stesso giorno.
-
-    - Se la richiesta è ancora IN_RICERCA: annullamento semplice, nessuna
-      penalità (l'utente non ha ancora impegnato nessun altro giocatore).
-    - Se la richiesta è LOCKED (già proposta in un gruppo con altri 3
-      giocatori): equivale a un RIFIUTO vero e proprio della proposta,
-      con le stesse conseguenze previste (punto 14): gli altri 3 tornano
-      in ricerca, l'utente viene penalizzato come per un rifiuto esplicito.
-      Riusiamo la stessa logica già validata in gestione_gruppi, invece
-      di duplicarla, per garantire lo stesso comportamento in entrambi i casi.
+    Logica condivisa tra l'endpoint POST (usato dal form web) e quello
+    GET (usato dal link cliccabile nei messaggi WhatsApp): annulla una
+    richiesta gestendo diversamente i casi IN_RICERCA e LOCKED.
     """
     richiesta = db.query(models.Richiesta).filter(models.Richiesta.id == richiesta_id).first()
     if richiesta is None:
@@ -483,6 +504,59 @@ def annulla_richiesta(richiesta_id: int, db: Session = Depends(get_db)):
             status_code=400,
             detail=f"Questa richiesta non può essere annullata (stato attuale: {richiesta.stato})"
         )
+
+
+@app.post("/richieste/{richiesta_id}/annulla")
+def annulla_richiesta(richiesta_id: int, db: Session = Depends(get_db)):
+    """
+    Permette a un utente di annullare una propria richiesta, tipicamente
+    dopo essere stato avvisato di averne già una attiva per lo stesso giorno.
+    Usato dal form web (chiamata JSON, non un semplice link).
+    """
+    return _annulla_richiesta_logica(richiesta_id, db)
+
+
+@app.get("/richieste/{richiesta_id}/annulla-da-link")
+def annulla_richiesta_da_link(richiesta_id: int, db: Session = Depends(get_db)):
+    """
+    Versione "cliccabile" dell'annullamento, pensata per i link dentro i
+    messaggi WhatsApp (dove serve un semplice click, non una chiamata
+    tecnica). Mostra una pagina HTML minimale di conferma invece di un JSON.
+    """
+    try:
+        risultato = _annulla_richiesta_logica(richiesta_id, db)
+        messaggio = risultato.get("messaggio", "Operazione completata.")
+        colore = "#1a7a3a"
+    except HTTPException as errore:
+        messaggio = errore.detail if isinstance(errore.detail, str) else "Si è verificato un errore."
+        colore = "#a3231f"
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="it">
+    <head>
+        <meta charset="UTF-8">
+        <title>Annullamento richiesta</title>
+        <style>
+            body {{ font-family: -apple-system, sans-serif; background: #f6f7f8;
+                    display: flex; align-items: center; justify-content: center;
+                    height: 100vh; margin: 0; padding: 20px; text-align: center; }}
+            .box {{ background: white; padding: 28px; border-radius: 12px;
+                     max-width: 420px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+            p {{ color: {colore}; font-size: 16px; }}
+            a {{ display: inline-block; margin-top: 16px; color: #2563eb;
+                  text-decoration: none; font-size: 14px; }}
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <p>{messaggio}</p>
+            <a href="{config.PUBLIC_FORM_URL}">Inserisci una nuova richiesta →</a>
+        </div>
+    </body>
+    </html>
+    """
+    return Response(content=html, media_type="text/html")
 
 
 @app.post("/matching/esegui-ora")
@@ -589,6 +663,13 @@ def controlla_partite_concluse_manuale(db: Session = Depends(get_db)):
     """Endpoint SOLO PER TEST: forza il controllo automatico delle partite concluse."""
     n = controlla_partite_da_segnare_automaticamente(db)
     return {"partite_segnate_automaticamente": n}
+
+
+@app.post("/richieste/controlla-promemoria-ora")
+def controlla_promemoria_manuale(db: Session = Depends(get_db)):
+    """Endpoint SOLO PER TEST: forza il controllo del promemoria mancata partita."""
+    n = controlla_promemoria_mancata_partita(db)
+    return {"promemoria_inviati": n}
 
 
 @app.get("/admin/gruppi-da-prenotare")
