@@ -23,7 +23,7 @@ def notifica_proposta_gruppo(gruppo, membri, circolo):
     nomi = ", ".join(f"{m.utente.nome} {m.utente.cognome} ({m.lato_assegnato})" for m in membri)
 
     testo = (
-        f"🎾 Nuova partita proposta!\n"
+        f"ߎ Ho trovato dei compagni per te!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Giocatori: {nomi}\n\n"
@@ -47,7 +47,7 @@ def notifica_gruppo_confermato(membri, gruppo, circolo):
         f"✅ Tutti hanno confermato!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
-        f"Stiamo procedendo con la prenotazione del campo, a breve la conferma definitiva."
+        f"Sto procedendo con la prenotazione del campo, ti aggiorno a breve con la conferma definitiva."
     )
     for membro in membri:
         invia_gruppo_confermato(membro.utente.whatsapp_numero, testo)
