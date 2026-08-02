@@ -12,7 +12,7 @@ import os
 import csv
 import io
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
@@ -25,7 +25,7 @@ from app.services.bitmask import crea_bitmask, bitmask_a_fasce_leggibili
 from app.services.conversione_livello import ottieni_livello_playtomic
 from app.services.whatsapp import genera_otp, invia_otp_whatsapp, invia_riepilogo_richiesta
 from app.matching.motore import esegui_ciclo_matching
-from app.matching.gestione_gruppi import rispondi_a_gruppo, controlla_timeout_gruppi
+from app.matching.gestione_gruppi import rispondi_a_gruppo, controlla_timeout_gruppi, rispondi_a_gruppo_da_whatsapp
 from app.matching.prenotazione import conferma_prenotazione, fallisce_prenotazione
 from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
@@ -585,14 +585,53 @@ def esegui_matching_manuale(db: Session = Depends(get_db)):
 def rispondi_a_proposta(gruppo_id: int, dati: schemas.RispostaGruppo, db: Session = Depends(get_db)):
     """
     Endpoint dello Step 03: un giocatore conferma o rifiuta una proposta di partita.
-    In produzione questo verrà chiamato dal webhook di Twilio quando l'utente
-    preme il bottone Quick Reply su WhatsApp; per ora lo chiamiamo direttamente per i test.
+    Usato per i test manuali; le risposte reali via WhatsApp arrivano invece
+    tramite /webhooks/twilio/incoming.
     """
     try:
         risultato = rispondi_a_gruppo(db, gruppo_id, dati.utente_id, dati.risposta)
     except ValueError as errore:
         raise HTTPException(status_code=400, detail=str(errore))
     return risultato
+
+
+@app.post("/webhooks/twilio/incoming")
+async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db)):
+    """
+    Riceve i messaggi in arrivo su WhatsApp (es. quando un utente preme
+    il bottone Conferma o Rifiuta su una proposta di partita). Va
+    configurato come "webhook URL" per i messaggi in arrivo, nel pannello
+    Twilio (sezione WhatsApp Sender).
+
+    Verifica la firma di Twilio per essere sicuri che la richiesta arrivi
+    davvero da loro (altrimenti chiunque conoscesse questo indirizzo
+    potrebbe inviare risposte false a nome di un utente). La verifica
+    viene saltata solo se TWILIO_AUTH_TOKEN non è configurato (utile per
+    testare l'endpoint in locale senza credenziali reali).
+    """
+    corpo_form = await request.form()
+    dati = dict(corpo_form)
+
+    if config.TWILIO_AUTH_TOKEN:
+        from twilio.request_validator import RequestValidator
+        validatore = RequestValidator(config.TWILIO_AUTH_TOKEN)
+        firma = request.headers.get("X-Twilio-Signature", "")
+        valido = validatore.validate(str(request.url), dati, firma)
+        if not valido:
+            raise HTTPException(status_code=403, detail="Firma Twilio non valida")
+
+    numero_mittente = dati.get("From", "").replace("whatsapp:", "")
+    testo_messaggio = dati.get("Body", "")
+
+    try:
+        rispondi_a_gruppo_da_whatsapp(db, numero_mittente, testo_messaggio)
+    except ValueError as errore:
+        # Non è un errore del server: es. un messaggio che non c'entra
+        # nulla con una proposta in corso. Lo logghiamo e rispondiamo
+        # comunque 200 a Twilio (altrimenti riproverebbe a inviarcelo).
+        print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
+
+    return Response(content="<Response></Response>", media_type="application/xml")
 
 
 @app.post("/matching/controlla-timeout-ora")
