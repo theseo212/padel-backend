@@ -5,3 +5,6 @@ psycopg[binary]==3.2.3
 python-dotenv==1.0.1
 pydantic==2.9.2
 apscheduler==3.10.4
+twilio==9.3.7
+python-multipart==0.0.9
+
