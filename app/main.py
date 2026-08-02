@@ -33,7 +33,7 @@ from app.matching.feedback import (
 )
 from app.matching.promemoria_disponibilita import controlla_promemoria_mancata_partita
 
-app = FastAPI(title="Sistema Prenotazione Padel")
+app = FastAPI(title="AnnaPadel")
 
 # CORS: permette al form pubblico (che gira su un dominio/porta diversa)
 # di chiamare questa API dal browser. In sviluppo locale, se la variabile
@@ -412,13 +412,13 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
             richiesta_id=richiesta.id,
             utente_nuovo=utente_nuovo,
             richiede_validazione_otp=True,
-            messaggio="Richiesta salvata. Ti abbiamo inviato un codice di verifica su WhatsApp.",
+            messaggio="Richiesta salvata. Ti ho appena inviato un codice di verifica su WhatsApp.",
         )
 
     else:
         fasce_leggibili = ", ".join(bitmask_a_fasce_leggibili(bitmask))
         riepilogo = (
-            f"Richiesta confermata!\n"
+            f"Ciao {utente.nome}, ho registrato la tua richiesta!\n"
             f"{dati.tipo_partita} - {dati.giorno}\n"
             f"Orari: {fasce_leggibili}\n"
             f"Livello: {utente.livello_playtomic}\n"
@@ -460,6 +460,28 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
     utente.otp_codice = None
     utente.otp_scadenza = None
     db.commit()
+
+    # Il riepilogo non era ancora stato mandato per questa primissima
+    # richiesta (era stato inviato solo l'OTP): lo mandiamo ora, recuperando
+    # i dati dell'ultima richiesta inserita da questo utente - così la
+    # promessa mostrata nel form ("riceverai anche su WhatsApp una conferma
+    # con questo riepilogo") viene mantenuta anche al primissimo utilizzo.
+    ultima_richiesta = (
+        db.query(models.Richiesta)
+        .filter(models.Richiesta.utente_id == utente.id)
+        .order_by(models.Richiesta.data_creazione.desc())
+        .first()
+    )
+    if ultima_richiesta is not None:
+        fasce_leggibili = ", ".join(bitmask_a_fasce_leggibili(ultima_richiesta.disponibilita_bitmask))
+        riepilogo = (
+            f"Perfetto {utente.nome}, numero verificato! Ecco il riepilogo della tua richiesta:\n"
+            f"{ultima_richiesta.tipo_partita} - {ultima_richiesta.giorno}\n"
+            f"Orari: {fasce_leggibili}\n"
+            f"Livello: {utente.livello_playtomic}\n"
+            f"Circoli: {', '.join(c.nome for c in ultima_richiesta.circoli)}"
+        )
+        invia_riepilogo_richiesta(utente.whatsapp_numero, riepilogo)
 
     return {"messaggio": "Numero verificato con successo."}
 
