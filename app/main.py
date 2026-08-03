@@ -440,11 +440,15 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
 
     else:
         fasce_leggibili = ", ".join(bitmask_a_fasce_leggibili(bitmask))
+        lato_leggibile = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}.get(
+            utente.lato_preferito, utente.lato_preferito
+        )
         riepilogo = (
             f"Ciao {utente.nome}, ho registrato la tua richiesta!\n"
             f"{dati.tipo_partita} - {dati.giorno}\n"
             f"Orari: {fasce_leggibili}\n"
             f"Livello: {utente.livello_playtomic}\n"
+            f"Lato: {lato_leggibile}\n"
             f"Circoli: {', '.join(c.nome for c in circoli)}"
         )
         invia_riepilogo_richiesta(utente.whatsapp_numero, riepilogo)
@@ -497,11 +501,15 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
     )
     if ultima_richiesta is not None:
         fasce_leggibili = ", ".join(bitmask_a_fasce_leggibili(ultima_richiesta.disponibilita_bitmask))
+        lato_leggibile = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}.get(
+            utente.lato_preferito, utente.lato_preferito
+        )
         riepilogo = (
             f"Perfetto {utente.nome}, numero verificato! Ecco il riepilogo della tua richiesta:\n"
             f"{ultima_richiesta.tipo_partita} - {ultima_richiesta.giorno}\n"
             f"Orari: {fasce_leggibili}\n"
             f"Livello: {utente.livello_playtomic}\n"
+            f"Lato: {lato_leggibile}\n"
             f"Circoli: {', '.join(c.nome for c in ultima_richiesta.circoli)}"
         )
         invia_riepilogo_richiesta(utente.whatsapp_numero, riepilogo)
