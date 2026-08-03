@@ -160,6 +160,15 @@ def inizializza_database_se_necessario():
         connessione.execute(text(
             "ALTER TABLE richieste ALTER COLUMN disponibilita_bitmask TYPE BIGINT"
         ))
+        connessione.execute(text(
+            "ALTER TABLE utenti ADD COLUMN IF NOT EXISTS termini_accettati BOOLEAN DEFAULT FALSE"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE utenti ADD COLUMN IF NOT EXISTS privacy_accettata BOOLEAN DEFAULT FALSE"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE utenti ADD COLUMN IF NOT EXISTS data_accettazione_termini TIMESTAMP"
+        ))
         connessione.commit()
 
     db = SessionLocal()
@@ -370,6 +379,20 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
     # è solo una preferenza personale che può cambiare con l'esperienza.
     if not utente_nuovo:
         utente.lato_preferito = dati.lato_preferito
+
+    # --- 2bis. Accettazione Termini e Condizioni + Privacy Policy ---
+    # Richiesta obbligatoria solo finché l'utente non li ha già accettati una
+    # volta (poi resta registrata per sempre, non si richiede più - stesso
+    # principio del livello: una scelta fissata che non serve ripetere).
+    if not utente.termini_accettati or not utente.privacy_accettata:
+        if not (dati.accetta_termini and dati.accetta_privacy):
+            raise HTTPException(
+                status_code=400,
+                detail="Devi accettare i Termini e Condizioni e la Privacy Policy per continuare."
+            )
+        utente.termini_accettati = True
+        utente.privacy_accettata = True
+        utente.data_accettazione_termini = datetime.utcnow()
 
     # --- 3. Costruisce il bitmask e crea la richiesta ---
     try:
