@@ -37,6 +37,9 @@ class Utente(Base):
     sospeso_fino_a = Column(DateTime, nullable=True)
     mancate_conferme_consecutive = Column(Integer, default=0)
     ultimo_numero_partite_valutato = Column(Integer, default=0)
+    termini_accettati = Column(Boolean, default=False)
+    privacy_accettata = Column(Boolean, default=False)
+    data_accettazione_termini = Column(DateTime, nullable=True)
 
     data_creazione = Column(DateTime, server_default=func.now())
 
