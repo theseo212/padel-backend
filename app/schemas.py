@@ -20,6 +20,11 @@ class RichiestaCreate(BaseModel):
     livello_valore: str = Field(..., description="es. '3.5' oppure 'B2'")
     lato_preferito: Literal["DX", "SX", "INDIFFERENTE"]
 
+    # accettazione legale (richiesta solo alla primissima richiesta - vedi
+    # main.py: per gli utenti già riconosciuti non serve inviarla di nuovo)
+    accetta_termini: bool = False
+    accetta_privacy: bool = False
+
     # dati della richiesta specifica (sempre richiesti, ad ogni richiesta)
     tipo_partita: Literal["MASCHILE", "FEMMINILE", "MISTA"]
     giorno: date
