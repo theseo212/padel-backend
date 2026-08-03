@@ -11,7 +11,7 @@ import os
 # prima persona (una specie di segretaria personale), non un "sistema"
 # impersonale. Il nome del brand e la firma sono centralizzati qui.
 NOME_BRAND = "AnnaPadel"
-FIRMA_MESSAGGIO = "\n\nߒ La tua Anna"
+FIRMA_MESSAGGIO = "\n\n♥ La tua Anna"
 
 # === INDIRIZZO PUBBLICO DEL FORM (usato nei link dei messaggi WhatsApp) ===
 PUBLIC_FORM_URL = os.getenv("PUBLIC_FORM_URL", "https://padel-frontend-production-913f.up.railway.app")
