@@ -162,3 +162,18 @@ def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str
     variabili = {"1": nome, "2": link_annulla, "3": link_nuova} if nome else None
     _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_MANCATA_PARTITA, variabili,
            etichetta_simulazione=" - PROMEMORIA")
+
+
+def invia_conferma_ricevuta(numero_whatsapp: str, testo: str):
+    """
+    Risposta immediata quando UN giocatore conferma, prima che tutti e 4
+    abbiano risposto. È sempre dentro una conversazione che l'utente ha
+    appena aperto lui stesso (scrivendoci "Confermo"), quindi il testo
+    libero funziona sempre, senza bisogno di un template approvato.
+    """
+    _invia(numero_whatsapp, testo, None, None)
+
+
+def invia_risposta_tardiva(numero_whatsapp: str, testo: str):
+    """Stesso discorso: risposta dentro una conversazione già aperta, nessun template necessario."""
+    _invia(numero_whatsapp, testo, None, None)
