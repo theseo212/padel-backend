@@ -8,7 +8,7 @@ chiaro - niente più "contenitore generico" con un solo segnaposto libero).
 Tre modalità possibili, scelte automaticamente in base a cosa è configurato:
 1. NESSUNA credenziale Twilio -> simulazione (stampa nei log).
 2. Credenziali Twilio configurate MA il template specifico non è ancora
-   pronto -> invio reale come testo libero (funziona nel ssSandbox, o
+   pronto -> invio reale come testo libero (funziona nel Sandbox, o
    comunque dentro una finestra di conversazione aperta).
 3. Credenziali Twilio + template specifico configurato -> invio reale
    tramite quel template, con le variabili giuste al posto giusto.
@@ -40,7 +40,7 @@ def genera_otp() -> str:
     return "".join(random.choices(string.digits, k=OTP_LUNGHEZZA))
 
 
-def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, variabili: dict | None, etichetta_simulazione: str = ""):
+def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, variabili: dict | None, etichetta_simulazione: str = "") -> bool:
     """
     Punto unico di invio.
     - Se c'è un template configurato per questo messaggio specifico, lo usa
@@ -48,6 +48,13 @@ def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, v
     - Altrimenti, se Twilio è comunque configurato, manda il testo libero
       (funziona nel Sandbox).
     - Altrimenti, simula (stampa nei log).
+
+    Restituisce True se il messaggio è stato mandato per davvero (o siamo
+    in simulazione locale, che consideriamo "riuscita" per non bloccare lo
+    sviluppo), False SOLO se Twilio è configurato ma entrambi i tentativi
+    di invio reale sono falliti sul serio (es. limite giornaliero di
+    conversazioni superato) - in quel caso il chiamante può decidere di
+    avvisare l'utente invece di fingere che sia andato tutto bene.
     """
     if _TWILIO_CONFIGURATO and content_sid and variabili is not None:
         try:
@@ -57,7 +64,7 @@ def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, v
                 content_sid=content_sid,
                 content_variables=json.dumps(variabili),
             )
-            return
+            return True
         except Exception as errore:
             print(f"[TWILIO][ERRORE INVIO TEMPLATE] a {numero_whatsapp}: {errore}")
 
@@ -68,25 +75,28 @@ def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, v
                 to=f"whatsapp:{numero_whatsapp}",
                 body=testo_completo,
             )
-            return
+            return True
         except Exception as errore:
             print(f"[TWILIO][ERRORE INVIO TESTO LIBERO] a {numero_whatsapp}: {errore}")
+            print(f"[TWILIO][INVIO FALLITO DAVVERO] messaggio NON recapitato a {numero_whatsapp}")
+            return False
 
     prefisso = f"[SIMULAZIONE WHATSAPP{etichetta_simulazione}]"
     print(f"{prefisso} Invio a {numero_whatsapp}:\n{testo_completo}")
+    return True
 
 
-def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str):
+def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str) -> bool:
     testo = (
         f"Ciao! Sono Anna ߑ Il tuo codice di verifica per {NOME_BRAND} è {codice_otp}, "
         f"valido {OTP_DURATA_VALIDITA_MINUTI} minuti."
     ) + FIRMA_MESSAGGIO
     variabili = {"1": codice_otp, "2": str(OTP_DURATA_VALIDITA_MINUTI)}
-    _invia(numero_whatsapp, testo, TEMPLATE_OTP, variabili)
+    return _invia(numero_whatsapp, testo, TEMPLATE_OTP, variabili)
 
 
 def invia_riepilogo_richiesta(numero_whatsapp: str, riepilogo: str, nome: str = "", tipo_partita: str = "",
-                                giorno: str = "", orari: str = "", livello: str = "", lato: str = "", circoli: str = ""):
+                                giorno: str = "", orari: str = "", livello: str = "", lato: str = "", circoli: str = "") -> bool:
     """
     'riepilogo' resta il testo già formattato (usato per la simulazione),
     gli altri parametri sono i pezzi separati necessari al template reale.
@@ -95,7 +105,7 @@ def invia_riepilogo_richiesta(numero_whatsapp: str, riepilogo: str, nome: str = 
         "1": nome, "2": tipo_partita, "3": giorno, "4": orari,
         "5": livello, "6": lato, "7": circoli,
     } if nome else None
-    _invia(numero_whatsapp, riepilogo, TEMPLATE_RIEPILOGO, variabili)
+    return _invia(numero_whatsapp, riepilogo, TEMPLATE_RIEPILOGO, variabili)
 
 
 def invia_proposta_gruppo(numero_whatsapp: str, testo_proposta: str, circolo: str = "", giorno: str = "",
