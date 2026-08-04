@@ -90,7 +90,10 @@ def controlla_promemoria_mancata_partita(db: Session, adesso: datetime | None = 
                 f"poi inseriscine una nuova da qui: {link_nuova_richiesta}\n"
                 f"(ti riconoscerò subito, sarà velocissimo)"
             )
-            invia_promemoria_mancata_partita(richiesta.utente.whatsapp_numero, testo)
+            invia_promemoria_mancata_partita(
+                richiesta.utente.whatsapp_numero, testo,
+                nome=richiesta.utente.nome, link_annulla=link_annulla, link_nuova=link_nuova_richiesta,
+            )
             richiesta.promemoria_mancata_partita_inviato = True
             inviati += 1
 
