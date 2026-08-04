@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models, config
 from app.matching.notifiche import notifica_annullamento_gruppo, notifica_gruppo_confermato
-from app.services.whatsapp import invia_sospensione_account
+from app.services.whatsapp import invia_sospensione_account, invia_conferma_ricevuta, invia_risposta_tardiva
 
 
 def _penalizza_mancata_conferma(db: Session, utente: models.Utente):
@@ -123,6 +123,17 @@ def rispondi_a_gruppo(db: Session, gruppo_id: int, utente_id: int, risposta: str
         db.commit()
 
         gruppo_completato = _completa_gruppo_se_possibile(db, gruppo)
+
+        if not gruppo_completato:
+            # Diamo un riscontro immediato invece di lasciare l'utente nel
+            # dubbio se la sua conferma sia arrivata o no, in attesa che
+            # anche gli altri rispondano.
+            invia_conferma_ricevuta(
+                membro.utente.whatsapp_numero,
+                "✅ Ho ricevuto la tua conferma! Appena arrivano anche quelle degli altri, "
+                "ti mando la conferma definitiva del gruppo. ߎ"
+            )
+
         return {"stato_gruppo": gruppo.stato, "completato": gruppo_completato}
 
     elif risposta == "RIFIUTO":
@@ -183,10 +194,42 @@ def rispondi_a_gruppo_da_whatsapp(db: Session, numero_whatsapp: str, testo_rispo
         .order_by(models.Gruppo.data_proposta.desc())
         .first()
     )
-    if membro is None:
-        raise ValueError(f"Nessuna proposta in attesa di risposta trovata per {numero_whatsapp}")
 
     testo_normalizzato = testo_risposta.strip().lower()
+    sembra_conferma_o_rifiuto = "conferm" in testo_normalizzato or "rifiut" in testo_normalizzato
+
+    if membro is None:
+        # Non ha nessuna proposta IN_ATTESA in questo momento. Se il testo
+        # sembra comunque un tentativo di Conferma/Rifiuta, è probabile che
+        # sia arrivato in ritardo (il gruppo è già stato deciso nel
+        # frattempo, per timeout o per il rifiuto di qualcun altro) -
+        # meglio dirglielo chiaramente invece di lasciarlo nel silenzio,
+        # magari senza che si accorga che il tempo era scaduto.
+        if sembra_conferma_o_rifiuto:
+            un_giorno_fa = datetime.utcnow() - timedelta(hours=24)
+            membro_recente = (
+                db.query(models.GruppoMembro)
+                .join(models.Gruppo, models.Gruppo.id == models.GruppoMembro.gruppo_id)
+                .filter(
+                    models.GruppoMembro.utente_id == utente.id,
+                    models.Gruppo.stato != "PROPOSTO",
+                    models.Gruppo.data_proposta >= un_giorno_fa,
+                )
+                .order_by(models.Gruppo.data_proposta.desc())
+                .first()
+            )
+            if membro_recente is not None:
+                invia_risposta_tardiva(
+                    utente.whatsapp_numero,
+                    "Ops, questa proposta di partita non è più valida — il tempo per "
+                    "confermare (15 minuti) è scaduto, oppure la situazione è cambiata "
+                    "nel frattempo. Se hai ancora una richiesta attiva, continuo comunque "
+                    "a cercarti compagni! ߎ"
+                )
+                return {"stato_gruppo": "SCADUTO_O_GIA_DECISO", "risposta_tardiva": True}
+
+        raise ValueError(f"Nessuna proposta in attesa di risposta trovata per {numero_whatsapp}")
+
     if "conferm" in testo_normalizzato:
         risposta = "CONFERMA"
     elif "rifiut" in testo_normalizzato:
