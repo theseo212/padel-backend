@@ -28,15 +28,20 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")  # es. "whatsapp:+14155238886"
 
-# Servono solo 3 template approvati (non uno per ogni tipo di messaggio):
-# 1) OTP - struttura fissa con codice e durata
-# 2) GENERICO - un contenitore di testo libero, riusato per tutti i messaggi
-#    informativi (riepiloghi, conferme, annullamenti, promemoria, ecc.) -
-#    più semplice da approvare una volta sola invece di tanti template simili
-# 3) PROPOSTA_GRUPPO - come il generico, ma con i due bottoni Conferma/Rifiuta
+# Ogni messaggio ha il suo template, con testo fisso attorno alle variabili
+# (Meta rifiuta i template dove una variabile non ha contesto chiaro intorno,
+# quindi niente più "contenitori generici" con un solo segnaposto libero).
 TEMPLATE_OTP = os.getenv("TEMPLATE_OTP")
-TEMPLATE_GENERICO = os.getenv("TEMPLATE_GENERICO")
+TEMPLATE_RIEPILOGO = os.getenv("TEMPLATE_RIEPILOGO")
 TEMPLATE_PROPOSTA_GRUPPO = os.getenv("TEMPLATE_PROPOSTA_GRUPPO")
+TEMPLATE_ANNULLAMENTO = os.getenv("TEMPLATE_ANNULLAMENTO")
+TEMPLATE_GRUPPO_CONFERMATO = os.getenv("TEMPLATE_GRUPPO_CONFERMATO")
+TEMPLATE_PRENOTAZIONE_CONFERMATA = os.getenv("TEMPLATE_PRENOTAZIONE_CONFERMATA")
+TEMPLATE_PRENOTAZIONE_FALLITA = os.getenv("TEMPLATE_PRENOTAZIONE_FALLITA")
+TEMPLATE_RICHIESTA_FEEDBACK = os.getenv("TEMPLATE_RICHIESTA_FEEDBACK")
+TEMPLATE_PROMEMORIA_FEEDBACK = os.getenv("TEMPLATE_PROMEMORIA_FEEDBACK")
+TEMPLATE_SOSPENSIONE = os.getenv("TEMPLATE_SOSPENSIONE")
+TEMPLATE_PROMEMORIA_MANCATA_PARTITA = os.getenv("TEMPLATE_PROMEMORIA_MANCATA_PARTITA")
 
 # === FASCIA ORARIA GESTITA DAL SISTEMA ===
 ORA_INIZIO_GIORNATA = 7    # 07:00
