@@ -451,9 +451,12 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
             f"Lato: {lato_leggibile}\n"
             f"Circoli: {', '.join(c.nome for c in circoli)}"
         )
-        invia_riepilogo_richiesta(utente.whatsapp_numero, riepilogo)
-
-        db.commit()
+        invia_riepilogo_richiesta(
+            utente.whatsapp_numero, riepilogo,
+            nome=utente.nome, tipo_partita=dati.tipo_partita, giorno=str(dati.giorno),
+            orari=fasce_leggibili, livello=str(utente.livello_playtomic),
+            lato=lato_leggibile, circoli=', '.join(c.nome for c in circoli),
+        )
         return schemas.RichiestaResponse(
             richiesta_id=richiesta.id,
             utente_nuovo=utente_nuovo,
@@ -512,7 +515,12 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
             f"Lato: {lato_leggibile}\n"
             f"Circoli: {', '.join(c.nome for c in ultima_richiesta.circoli)}"
         )
-        invia_riepilogo_richiesta(utente.whatsapp_numero, riepilogo)
+        invia_riepilogo_richiesta(
+            utente.whatsapp_numero, riepilogo,
+            nome=utente.nome, tipo_partita=ultima_richiesta.tipo_partita, giorno=str(ultima_richiesta.giorno),
+            orari=fasce_leggibili, livello=str(utente.livello_playtomic),
+            lato=lato_leggibile, circoli=', '.join(c.nome for c in ultima_richiesta.circoli),
+        )
 
     return {"messaggio": "Numero verificato con successo."}
 
