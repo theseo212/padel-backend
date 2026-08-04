@@ -70,7 +70,10 @@ def conferma_prenotazione(db: Session, gruppo_id: int) -> models.Partita:
         f"Buona partita! ߎ"
     )
     for membro in gruppo.membri:
-        invia_prenotazione_confermata(membro.utente.whatsapp_numero, testo)
+        invia_prenotazione_confermata(
+            membro.utente.whatsapp_numero, testo,
+            circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
+        )
 
     db.commit()
     db.refresh(partita)
@@ -109,6 +112,6 @@ def fallisce_prenotazione(db: Session, gruppo_id: int):
         f"non è risultato disponibile. Sto cercando una nuova soluzione per te."
     )
     for membro in gruppo.membri:
-        invia_prenotazione_fallita(membro.utente.whatsapp_numero, testo)
+        invia_prenotazione_fallita(membro.utente.whatsapp_numero, testo, circolo=circolo.nome)
 
     db.commit()
