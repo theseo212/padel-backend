@@ -71,7 +71,7 @@ def segna_partita_giocata(db: Session, partita_id: int):
             f"Ciao! Come è andata la partita? Valuta il livello dei tuoi compagni: {nomi_altri}\n"
             f"Per ciascuno: PIU_ALTO / GIUSTO / PIU_BASSO"
         )
-        invia_richiesta_feedback(membro.utente.whatsapp_numero, testo)
+        invia_richiesta_feedback(membro.utente.whatsapp_numero, testo, nomi_compagni=nomi_altri)
 
     db.commit()
     return partita
