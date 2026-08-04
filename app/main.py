@@ -29,7 +29,7 @@ from app.matching.gestione_gruppi import rispondi_a_gruppo, controlla_timeout_gr
 from app.matching.prenotazione import conferma_prenotazione, fallisce_prenotazione
 from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
-    controlla_partite_da_segnare_automaticamente,
+    controlla_partite_da_segnare_automaticamente, rispondi_feedback_da_whatsapp,
 )
 from app.matching.promemoria_disponibilita import controlla_promemoria_mancata_partita
 
@@ -686,11 +686,16 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
 
     try:
         rispondi_a_gruppo_da_whatsapp(db, numero_mittente, testo_messaggio)
-    except ValueError as errore:
-        # Non è un errore del server: es. un messaggio che non c'entra
-        # nulla con una proposta in corso. Lo logghiamo e rispondiamo
-        # comunque 200 a Twilio (altrimenti riproverebbe a inviarcelo).
-        print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
+    except ValueError:
+        # Non era una risposta a una proposta di gruppo in corso: proviamo
+        # a interpretarlo come un voto di valutazione livello (Step 04).
+        try:
+            rispondi_feedback_da_whatsapp(db, numero_mittente, testo_messaggio)
+        except ValueError as errore:
+            # Nemmeno questo: non è un errore del server, es. un messaggio
+            # che non c'entra nulla. Lo logghiamo e rispondiamo comunque 200
+            # a Twilio (altrimenti riproverebbe a inviarcelo).
+            print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
 
     return Response(content="<Response></Response>", media_type="application/xml")
 
