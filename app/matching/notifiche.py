@@ -31,7 +31,10 @@ def notifica_proposta_gruppo(gruppo, membri, circolo):
     )
 
     for membro in membri:
-        invia_proposta_gruppo(membro.utente.whatsapp_numero, testo)
+        invia_proposta_gruppo(
+            membro.utente.whatsapp_numero, testo,
+            circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario, giocatori=nomi,
+        )
 
 
 def notifica_annullamento_gruppo(membri, motivo: str):
@@ -50,4 +53,7 @@ def notifica_gruppo_confermato(membri, gruppo, circolo):
         f"Sto procedendo con la prenotazione del campo, ti aggiorno a breve con la conferma definitiva."
     )
     for membro in membri:
-        invia_gruppo_confermato(membro.utente.whatsapp_numero, testo)
+        invia_gruppo_confermato(
+            membro.utente.whatsapp_numero, testo,
+            circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
+        )
