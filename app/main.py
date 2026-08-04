@@ -13,6 +13,8 @@ import csv
 import io
 
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
@@ -59,6 +61,33 @@ app.add_middleware(
 )
 
 scheduler = BackgroundScheduler()
+
+_sicurezza_admin = HTTPBasic()
+
+
+def verifica_credenziali_admin(credenziali: HTTPBasicCredentials = Depends(_sicurezza_admin)):
+    """
+    Protegge il pannello operatore e tutte le azioni amministrative con
+    nome utente e password (autenticazione HTTP Basic - il browser mostra
+    un piccolo popup di accesso al primo utilizzo, poi ricorda le
+    credenziali per le richieste successive sulla stessa pagina).
+
+    Usa secrets.compare_digest invece di un semplice "==" per confrontare
+    le password: un confronto normale potrebbe rivelare, tramite il tempo
+    impiegato a rispondere, quanti caratteri sono corretti (un attacco
+    noto come "timing attack") - compare_digest impiega sempre lo stesso
+    tempo, indipendentemente da quanto la password è vicina a quella giusta.
+    """
+    utente_corretto = secrets.compare_digest(credenziali.username, config.ADMIN_USERNAME)
+    password_corretta = secrets.compare_digest(credenziali.password, config.ADMIN_PASSWORD)
+
+    if not (utente_corretto and password_corretta):
+        raise HTTPException(
+            status_code=401,
+            detail="Credenziali non valide",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credenziali.username
 
 
 def job_matching_periodico():
@@ -234,7 +263,7 @@ def home():
     return {"messaggio": "Il server è acceso e funzionante."}
 
 
-@app.get("/admin")
+@app.get("/admin", dependencies=[Depends(verifica_credenziali_admin)])
 def pannello_operatore():
     """Serve la pagina web del pannello operatore."""
     import os
@@ -242,7 +271,7 @@ def pannello_operatore():
     return FileResponse(percorso)
 
 
-@app.get("/admin/report")
+@app.get("/admin/report", dependencies=[Depends(verifica_credenziali_admin)])
 def pagina_report():
     """Serve la pagina web del report partite."""
     import os
@@ -428,7 +457,19 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
         codice = genera_otp()
         utente.otp_codice = codice
         utente.otp_scadenza = datetime.utcnow() + timedelta(minutes=config.OTP_DURATA_VALIDITA_MINUTI)
-        invia_otp_whatsapp(utente.whatsapp_numero, codice)
+        otp_inviato_davvero = invia_otp_whatsapp(utente.whatsapp_numero, codice)
+
+        if not otp_inviato_davvero:
+            # L'invio è fallito per davvero (es. limite giornaliero di
+            # conversazioni WhatsApp superato): meglio annullare tutto
+            # ed essere onesti, invece di lasciare un account "a metà"
+            # che aspetta per sempre un codice mai arrivato.
+            db.rollback()
+            raise HTTPException(
+                status_code=503,
+                detail="Il servizio WhatsApp è temporaneamente al completo (troppe nuove "
+                       "richieste oggi). Riprova tra qualche ora."
+            )
 
         db.commit()
         return schemas.RichiestaResponse(
@@ -451,17 +492,27 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
             f"Lato: {lato_leggibile}\n"
             f"Circoli: {', '.join(c.nome for c in circoli)}"
         )
-        invia_riepilogo_richiesta(
+        riepilogo_inviato_davvero = invia_riepilogo_richiesta(
             utente.whatsapp_numero, riepilogo,
             nome=utente.nome, tipo_partita=dati.tipo_partita, giorno=str(dati.giorno),
             orari=fasce_leggibili, livello=str(utente.livello_playtomic),
             lato=lato_leggibile, circoli=', '.join(c.nome for c in circoli),
         )
+        # Qui la richiesta è comunque valida e verrà comunque cercata dal
+        # matching, quindi NON la annulliamo se manca solo la conferma
+        # WhatsApp - siamo semplicemente onesti nel messaggio di risposta.
+        messaggio_risposta = (
+            "Richiesta salvata e riepilogo inviato su WhatsApp." if riepilogo_inviato_davvero
+            else "Richiesta salvata, ma non sono riuscito a mandarti la conferma su WhatsApp "
+                 "in questo momento (il servizio è temporaneamente al completo). La tua "
+                 "richiesta resta comunque attiva e verrà elaborata normalmente."
+        )
+        db.commit()
         return schemas.RichiestaResponse(
             richiesta_id=richiesta.id,
             utente_nuovo=utente_nuovo,
             richiede_validazione_otp=False,
-            messaggio="Richiesta salvata e riepilogo inviato su WhatsApp.",
+            messaggio=messaggio_risposta,
         )
 
 
@@ -620,7 +671,7 @@ def annulla_richiesta_da_link(richiesta_id: int, db: Session = Depends(get_db)):
     return Response(content=html, media_type="text/html")
 
 
-@app.post("/matching/esegui-ora")
+@app.post("/matching/esegui-ora", dependencies=[Depends(verifica_credenziali_admin)])
 def esegui_matching_manuale(db: Session = Depends(get_db)):
     """
     Endpoint SOLO PER TEST: fa scattare subito un ciclo di matching,
@@ -642,7 +693,7 @@ def esegui_matching_manuale(db: Session = Depends(get_db)):
     }
 
 
-@app.post("/gruppi/{gruppo_id}/rispondi")
+@app.post("/gruppi/{gruppo_id}/rispondi", dependencies=[Depends(verifica_credenziali_admin)])
 def rispondi_a_proposta(gruppo_id: int, dati: schemas.RispostaGruppo, db: Session = Depends(get_db)):
     """
     Endpoint dello Step 03: un giocatore conferma o rifiuta una proposta di partita.
@@ -700,14 +751,14 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
     return Response(content="<Response></Response>", media_type="application/xml")
 
 
-@app.post("/matching/controlla-timeout-ora")
+@app.post("/matching/controlla-timeout-ora", dependencies=[Depends(verifica_credenziali_admin)])
 def controlla_timeout_manuale(db: Session = Depends(get_db)):
     """Endpoint SOLO PER TEST: forza il controllo dei timeout invece di aspettare lo scheduler."""
     n = controlla_timeout_gruppi(db)
     return {"gruppi_annullati_per_timeout": n}
 
 
-@app.post("/gruppi/{gruppo_id}/prenotazione/conferma")
+@app.post("/gruppi/{gruppo_id}/prenotazione/conferma", dependencies=[Depends(verifica_credenziali_admin)])
 def prenotazione_confermata(gruppo_id: int, db: Session = Depends(get_db)):
     """
     Endpoint per l'OPERATORE (Step 04, punto 15): usato quando ha verificato
@@ -720,7 +771,7 @@ def prenotazione_confermata(gruppo_id: int, db: Session = Depends(get_db)):
     return {"partita_id": partita.id, "stato": partita.stato}
 
 
-@app.post("/gruppi/{gruppo_id}/prenotazione/fallita")
+@app.post("/gruppi/{gruppo_id}/prenotazione/fallita", dependencies=[Depends(verifica_credenziali_admin)])
 def prenotazione_fallita_endpoint(gruppo_id: int, db: Session = Depends(get_db)):
     """
     Endpoint per l'OPERATORE: usato quando ha verificato che il campo
@@ -733,7 +784,7 @@ def prenotazione_fallita_endpoint(gruppo_id: int, db: Session = Depends(get_db))
     return {"messaggio": "Prenotazione fallita, giocatori rimessi in ricerca."}
 
 
-@app.post("/partite/{partita_id}/segna-giocata")
+@app.post("/partite/{partita_id}/segna-giocata", dependencies=[Depends(verifica_credenziali_admin)])
 def segna_giocata(partita_id: int, db: Session = Depends(get_db)):
     """
     Da chiamare dopo che la partita si è effettivamente svolta.
@@ -746,7 +797,7 @@ def segna_giocata(partita_id: int, db: Session = Depends(get_db)):
     return {"partita_id": partita.id, "stato": partita.stato}
 
 
-@app.post("/partite/{partita_id}/feedback")
+@app.post("/partite/{partita_id}/feedback", dependencies=[Depends(verifica_credenziali_admin)])
 def invia_feedback(partita_id: int, dati: schemas.FeedbackCreate, db: Session = Depends(get_db)):
     """Un giocatore invia il proprio voto su un compagno di partita."""
     try:
@@ -756,28 +807,28 @@ def invia_feedback(partita_id: int, dati: schemas.FeedbackCreate, db: Session = 
     return {"messaggio": "Voto registrato."}
 
 
-@app.post("/feedback/controlla-cicli-ora")
+@app.post("/feedback/controlla-cicli-ora", dependencies=[Depends(verifica_credenziali_admin)])
 def controlla_feedback_manuale(db: Session = Depends(get_db)):
     """Endpoint SOLO PER TEST: forza il controllo dei cicli di feedback."""
     n = controlla_cicli_feedback(db)
     return {"finestre_chiuse": n}
 
 
-@app.post("/partite/controlla-concluse-ora")
+@app.post("/partite/controlla-concluse-ora", dependencies=[Depends(verifica_credenziali_admin)])
 def controlla_partite_concluse_manuale(db: Session = Depends(get_db)):
     """Endpoint SOLO PER TEST: forza il controllo automatico delle partite concluse."""
     n = controlla_partite_da_segnare_automaticamente(db)
     return {"partite_segnate_automaticamente": n}
 
 
-@app.post("/richieste/controlla-promemoria-ora")
+@app.post("/richieste/controlla-promemoria-ora", dependencies=[Depends(verifica_credenziali_admin)])
 def controlla_promemoria_manuale(db: Session = Depends(get_db)):
     """Endpoint SOLO PER TEST: forza il controllo del promemoria mancata partita."""
     n = controlla_promemoria_mancata_partita(db)
     return {"promemoria_inviati": n}
 
 
-@app.get("/admin/gruppi-da-prenotare")
+@app.get("/admin/gruppi-da-prenotare", dependencies=[Depends(verifica_credenziali_admin)])
 def lista_gruppi_da_prenotare(db: Session = Depends(get_db)):
     """
     Restituisce tutti i gruppi CONFERMATI in attesa che l'operatore
@@ -810,7 +861,7 @@ def lista_gruppi_da_prenotare(db: Session = Depends(get_db)):
     return risultato
 
 
-@app.get("/admin/partite-da-segnare")
+@app.get("/admin/partite-da-segnare", dependencies=[Depends(verifica_credenziali_admin)])
 def lista_partite_da_segnare(db: Session = Depends(get_db)):
     """Restituisce tutte le partite PRENOTATE, da segnare come giocate quando si sono svolte."""
     from sqlalchemy.orm import joinedload
@@ -879,7 +930,7 @@ def lista_circoli(solo_attivi: bool = False, provincia: str | None = None, db: S
     return [_circolo_a_dict(c) for c in circoli]
 
 
-@app.post("/circoli")
+@app.post("/circoli", dependencies=[Depends(verifica_credenziali_admin)])
 def crea_circolo(dati: schemas.CircoloCreate, db: Session = Depends(get_db)):
     """Crea un nuovo circolo."""
     circolo = models.Circolo(
@@ -900,7 +951,7 @@ def crea_circolo(dati: schemas.CircoloCreate, db: Session = Depends(get_db)):
     return _circolo_a_dict(circolo)
 
 
-@app.put("/circoli/{circolo_id}")
+@app.put("/circoli/{circolo_id}", dependencies=[Depends(verifica_credenziali_admin)])
 def modifica_circolo(circolo_id: int, dati: schemas.CircoloUpdate, db: Session = Depends(get_db)):
     """Modifica i dati di un circolo esistente (solo i campi inviati vengono aggiornati)."""
     circolo = db.query(models.Circolo).filter(models.Circolo.id == circolo_id).first()
@@ -916,7 +967,7 @@ def modifica_circolo(circolo_id: int, dati: schemas.CircoloUpdate, db: Session =
     return _circolo_a_dict(circolo)
 
 
-@app.delete("/circoli/{circolo_id}")
+@app.delete("/circoli/{circolo_id}", dependencies=[Depends(verifica_credenziali_admin)])
 def elimina_circolo(circolo_id: int, db: Session = Depends(get_db)):
     """
     Elimina definitivamente un circolo, SOLO se non è coinvolto in nessuna
@@ -1023,7 +1074,7 @@ def _cerca_partite_per_report(
     return risultato
 
 
-@app.get("/admin/report-partite")
+@app.get("/admin/report-partite", dependencies=[Depends(verifica_credenziali_admin)])
 def report_partite(
     giorno_da: str | None = None,
     giorno_a: str | None = None,
@@ -1042,7 +1093,7 @@ def report_partite(
     return _cerca_partite_per_report(db, giorno_da, giorno_a, circolo_id, giocatore, stato, ordina, direzione)
 
 
-@app.get("/admin/report-partite/export")
+@app.get("/admin/report-partite/export", dependencies=[Depends(verifica_credenziali_admin)])
 def esporta_report_partite_csv(
     giorno_da: str | None = None,
     giorno_a: str | None = None,
