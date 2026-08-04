@@ -1,19 +1,17 @@
 """
 Gestisce l'invio dei messaggi WhatsApp.
 
-Tutti i messaggi sono scritti come se li scrivesse "Anna" in prima persona
-(una specie di segretaria personale), non un "sistema" impersonale - e
-portano tutti la sua firma in fondo (vedi config.FIRMA_MESSAGGIO).
+Ogni messaggio ha un template dedicato, con testo fisso attorno alle
+variabili (Meta rifiuta i template dove una variabile non ha un contesto
+chiaro - niente più "contenitore generico" con un solo segnaposto libero).
 
 Tre modalità possibili, scelte automaticamente in base a cosa è configurato:
-1. NESSUNA credenziale Twilio -> simulazione (stampa nei log), comportamento
-   di riserva usato durante tutto lo sviluppo.
-2. Credenziali Twilio configurate MA nessun Content SID (caso tipico del
-   Sandbox, dove non serve un template approvato) -> invio reale come
-   testo libero.
-3. Credenziali Twilio + Content SID configurati (numero Business definitivo,
-   dove Meta richiede messaggi da un template approvato) -> invio reale
-   tramite template.
+1. NESSUNA credenziale Twilio -> simulazione (stampa nei log).
+2. Credenziali Twilio configurate MA il template specifico non è ancora
+   pronto -> invio reale come testo libero (funziona nel Sandbox, o
+   comunque dentro una finestra di conversazione aperta).
+3. Credenziali Twilio + template specifico configurato -> invio reale
+   tramite quel template, con le variabili giuste al posto giusto.
 """
 
 import json
@@ -22,7 +20,11 @@ import string
 from app.config import (
     OTP_LUNGHEZZA, OTP_DURATA_VALIDITA_MINUTI, NOME_BRAND, FIRMA_MESSAGGIO,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER,
-    TEMPLATE_OTP, TEMPLATE_GENERICO, TEMPLATE_PROPOSTA_GRUPPO,
+    TEMPLATE_OTP, TEMPLATE_RIEPILOGO, TEMPLATE_PROPOSTA_GRUPPO,
+    TEMPLATE_ANNULLAMENTO, TEMPLATE_GRUPPO_CONFERMATO,
+    TEMPLATE_PRENOTAZIONE_CONFERMATA, TEMPLATE_PRENOTAZIONE_FALLITA,
+    TEMPLATE_RICHIESTA_FEEDBACK, TEMPLATE_PROMEMORIA_FEEDBACK,
+    TEMPLATE_SOSPENSIONE, TEMPLATE_PROMEMORIA_MANCATA_PARTITA,
 )
 
 _TWILIO_CONFIGURATO = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER)
@@ -38,46 +40,40 @@ def genera_otp() -> str:
     return "".join(random.choices(string.digits, k=OTP_LUNGHEZZA))
 
 
-def _invia_via_twilio(numero_whatsapp: str, testo: str, content_sid: str | None = None) -> bool:
+def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, variabili: dict | None, etichetta_simulazione: str = ""):
     """
-    Funzione centrale di invio reale.
-    - Se content_sid è impostato, invia tramite template approvato (con
-      il testo intero come unica variabile) - necessario per un numero
-      Business reale.
-    - Se content_sid è None, invia il testo libero direttamente - funziona
-      nel Sandbox (o comunque dentro una finestra di conversazione aperta).
-    Restituisce True se l'invio è riuscito, False in caso di errore
-    (loggato ma non bloccante).
+    Punto unico di invio.
+    - Se c'è un template configurato per questo messaggio specifico, lo usa
+      con le sue variabili (necessario per un numero Business vero).
+    - Altrimenti, se Twilio è comunque configurato, manda il testo libero
+      (funziona nel Sandbox).
+    - Altrimenti, simula (stampa nei log).
     """
-    try:
-        parametri = {"from_": TWILIO_WHATSAPP_NUMBER, "to": f"whatsapp:{numero_whatsapp}"}
-        if content_sid:
-            parametri["content_sid"] = content_sid
-            parametri["content_variables"] = json.dumps({"1": testo})
-        else:
-            parametri["body"] = testo
-
-        _client.messages.create(**parametri)
-        return True
-    except Exception as errore:
-        print(f"[TWILIO][ERRORE INVIO] a {numero_whatsapp}: {errore}")
-        return False
-
-
-def _invia_generico(numero_whatsapp: str, testo: str, etichetta_simulazione: str = "", content_sid: str | None = None):
-    """
-    Punto unico usato da tutti i messaggi "informativi". Aggiunge sempre
-    la firma di Anna in fondo, così non serve ricordarsene in ogni testo.
-    """
-    testo_firmato = testo + FIRMA_MESSAGGIO
+    if _TWILIO_CONFIGURATO and content_sid and variabili is not None:
+        try:
+            _client.messages.create(
+                from_=TWILIO_WHATSAPP_NUMBER,
+                to=f"whatsapp:{numero_whatsapp}",
+                content_sid=content_sid,
+                content_variables=json.dumps(variabili),
+            )
+            return
+        except Exception as errore:
+            print(f"[TWILIO][ERRORE INVIO TEMPLATE] a {numero_whatsapp}: {errore}")
 
     if _TWILIO_CONFIGURATO:
-        inviato = _invia_via_twilio(numero_whatsapp, testo_firmato, content_sid=content_sid)
-        if inviato:
+        try:
+            _client.messages.create(
+                from_=TWILIO_WHATSAPP_NUMBER,
+                to=f"whatsapp:{numero_whatsapp}",
+                body=testo_completo,
+            )
             return
+        except Exception as errore:
+            print(f"[TWILIO][ERRORE INVIO TESTO LIBERO] a {numero_whatsapp}: {errore}")
 
     prefisso = f"[SIMULAZIONE WHATSAPP{etichetta_simulazione}]"
-    print(f"{prefisso} Invio a {numero_whatsapp}:\n{testo_firmato}")
+    print(f"{prefisso} Invio a {numero_whatsapp}:\n{testo_completo}")
 
 
 def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str):
@@ -85,77 +81,74 @@ def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str):
         f"Ciao! Sono Anna ߑ Il tuo codice di verifica per {NOME_BRAND} è {codice_otp}, "
         f"valido {OTP_DURATA_VALIDITA_MINUTI} minuti."
     ) + FIRMA_MESSAGGIO
-
-    if _TWILIO_CONFIGURATO:
-        inviato = _invia_via_twilio(numero_whatsapp, testo, content_sid=TEMPLATE_OTP)
-        if inviato:
-            return
-
-    print(f"[SIMULAZIONE WHATSAPP] Invio a {numero_whatsapp}: {testo}")
+    variabili = {"1": codice_otp, "2": str(OTP_DURATA_VALIDITA_MINUTI)}
+    _invia(numero_whatsapp, testo, TEMPLATE_OTP, variabili)
 
 
-def invia_riepilogo_richiesta(numero_whatsapp: str, riepilogo: str):
-    _invia_generico(numero_whatsapp, riepilogo, content_sid=TEMPLATE_GENERICO)
-
-
-def invia_proposta_gruppo(numero_whatsapp: str, testo_proposta: str):
+def invia_riepilogo_richiesta(numero_whatsapp: str, riepilogo: str, nome: str = "", tipo_partita: str = "",
+                                giorno: str = "", orari: str = "", livello: str = "", lato: str = "", circoli: str = ""):
     """
-    Messaggio con richiesta di conferma. Nel Sandbox, senza template con
-    bottoni veri, l'utente risponde scrivendo la parola "CONFERMA" o
-    "RIFIUTA" - il webhook la riconosce comunque (vedi gestione_gruppi.py),
-    quindi funziona bene anche senza bottoni cliccabili.
+    'riepilogo' resta il testo già formattato (usato per la simulazione),
+    gli altri parametri sono i pezzi separati necessari al template reale.
     """
-    testo_firmato = testo_proposta + FIRMA_MESSAGGIO
+    variabili = {
+        "1": nome, "2": tipo_partita, "3": giorno, "4": orari,
+        "5": livello, "6": lato, "7": circoli,
+    } if nome else None
+    _invia(numero_whatsapp, riepilogo, TEMPLATE_RIEPILOGO, variabili)
 
-    if _TWILIO_CONFIGURATO:
-        inviato = _invia_via_twilio(numero_whatsapp, testo_firmato, content_sid=TEMPLATE_PROPOSTA_GRUPPO)
-        if inviato:
-            return
 
-    print(f"[SIMULAZIONE WHATSAPP - PROPOSTA con bottoni Conferma/Rifiuta] "
-          f"Invio a {numero_whatsapp}:\n{testo_firmato}")
+def invia_proposta_gruppo(numero_whatsapp: str, testo_proposta: str, circolo: str = "", giorno: str = "",
+                            orario: str = "", giocatori: str = ""):
+    variabili = {"1": circolo, "2": giorno, "3": orario, "4": giocatori} if circolo else None
+    _invia(numero_whatsapp, testo_proposta, TEMPLATE_PROPOSTA_GRUPPO, variabili,
+           etichetta_simulazione=" - PROPOSTA con bottoni Conferma/Rifiuta")
 
 
 def invia_annullamento_gruppo(numero_whatsapp: str, motivo: str):
-    _invia_generico(
-        numero_whatsapp,
+    testo = (
         f"Ops! Ho dovuto annullare questa partita. Motivo: {motivo}\n"
-        f"Non preoccuparti, continuo subito a cercarti nuovi compagni! ߎ",
-        content_sid=TEMPLATE_GENERICO,
-    )
+        f"Non preoccuparti, continuo subito a cercarti nuovi compagni! ߎ"
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": motivo}
+    _invia(numero_whatsapp, testo, TEMPLATE_ANNULLAMENTO, variabili)
 
 
-def invia_gruppo_confermato(numero_whatsapp: str, testo: str):
-    _invia_generico(numero_whatsapp, testo, content_sid=TEMPLATE_GENERICO)
+def invia_gruppo_confermato(numero_whatsapp: str, testo: str, circolo: str = "", giorno: str = "", orario: str = ""):
+    variabili = {"1": circolo, "2": giorno, "3": orario} if circolo else None
+    _invia(numero_whatsapp, testo, TEMPLATE_GRUPPO_CONFERMATO, variabili)
 
 
 def invia_sospensione_account(numero_whatsapp: str, giorni: int):
-    _invia_generico(
-        numero_whatsapp,
-        f"Il tuo account è stato sospeso per {giorni} giorni per mancate conferme ripetute.",
-        content_sid=TEMPLATE_GENERICO,
-    )
+    testo = (
+        f"Il tuo account è stato sospeso per {giorni} giorni per mancate conferme ripetute."
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": str(giorni)}
+    _invia(numero_whatsapp, testo, TEMPLATE_SOSPENSIONE, variabili)
 
 
-def invia_prenotazione_confermata(numero_whatsapp: str, testo: str):
-    _invia_generico(numero_whatsapp, testo, content_sid=TEMPLATE_GENERICO)
+def invia_prenotazione_confermata(numero_whatsapp: str, testo: str, circolo: str = "", giorno: str = "", orario: str = ""):
+    variabili = {"1": circolo, "2": giorno, "3": orario} if circolo else None
+    _invia(numero_whatsapp, testo, TEMPLATE_PRENOTAZIONE_CONFERMATA, variabili)
 
 
-def invia_prenotazione_fallita(numero_whatsapp: str, testo: str):
-    _invia_generico(numero_whatsapp, testo, content_sid=TEMPLATE_GENERICO)
+def invia_prenotazione_fallita(numero_whatsapp: str, testo: str, circolo: str = ""):
+    variabili = {"1": circolo} if circolo else None
+    _invia(numero_whatsapp, testo, TEMPLATE_PRENOTAZIONE_FALLITA, variabili)
 
 
-def invia_richiesta_feedback(numero_whatsapp: str, testo: str):
-    _invia_generico(numero_whatsapp, testo, etichetta_simulazione=" - RICHIESTA FEEDBACK", content_sid=TEMPLATE_GENERICO)
+def invia_richiesta_feedback(numero_whatsapp: str, testo: str, nomi_compagni: str = ""):
+    variabili = {"1": nomi_compagni} if nomi_compagni else None
+    _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_FEEDBACK, variabili,
+           etichetta_simulazione=" - RICHIESTA FEEDBACK")
 
 
 def invia_promemoria_feedback(numero_whatsapp: str):
-    _invia_generico(
-        numero_whatsapp,
-        "Psst! Non dimenticare di valutare i tuoi compagni dell'ultima partita ߘ",
-        content_sid=TEMPLATE_GENERICO,
-    )
+    testo = "Psst! Non dimenticare di valutare i tuoi compagni dell'ultima partita ߘ" + FIRMA_MESSAGGIO
+    _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_FEEDBACK, {})
 
 
-def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str):
-    _invia_generico(numero_whatsapp, testo, etichetta_simulazione=" - PROMEMORIA", content_sid=TEMPLATE_GENERICO)
+def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str = "", link_annulla: str = "", link_nuova: str = ""):
+    variabili = {"1": nome, "2": link_annulla, "3": link_nuova} if nome else None
+    _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_MANCATA_PARTITA, variabili,
+           etichetta_simulazione=" - PROMEMORIA")
