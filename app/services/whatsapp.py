@@ -8,7 +8,7 @@ chiaro - niente più "contenitore generico" con un solo segnaposto libero).
 Tre modalità possibili, scelte automaticamente in base a cosa è configurato:
 1. NESSUNA credenziale Twilio -> simulazione (stampa nei log).
 2. Credenziali Twilio configurate MA il template specifico non è ancora
-   pronto -> invio reale come testo libero (funziona nel Sandbox, o
+   pronto -> invio reale come testo libero (funziona nel ssSandbox, o
    comunque dentro una finestra di conversazione aperta).
 3. Credenziali Twilio + template specifico configurato -> invio reale
    tramite quel template, con le variabili giuste al posto giusto.
