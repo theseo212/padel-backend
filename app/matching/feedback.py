@@ -14,6 +14,115 @@ from app import models, config
 from app.services.whatsapp import invia_richiesta_feedback, invia_promemoria_feedback
 
 
+def _prossimo_compagno_da_valutare(db: Session, partita_id: int, votante_id: int):
+    """
+    Restituisce il PROSSIMO compagno (tra gli altri 3 membri del gruppo)
+    che il votante non ha ancora valutato per questa partita, oppure None
+    se li ha già valutati tutti. L'ordine è deterministico (per utente_id),
+    così sappiamo sempre "a quale domanda sta rispondendo" quando arriva
+    un voto via WhatsApp, senza bisogno di altre informazioni.
+    """
+    partita = db.query(models.Partita).filter(models.Partita.id == partita_id).first()
+    if partita is None:
+        return None
+
+    gruppo = (
+        db.query(models.Gruppo)
+        .options(joinedload(models.Gruppo.membri).joinedload(models.GruppoMembro.utente))
+        .filter(models.Gruppo.id == partita.gruppo_id)
+        .first()
+    )
+    compagni = sorted(
+        [m for m in gruppo.membri if m.utente_id != votante_id],
+        key=lambda m: m.utente_id,
+    )
+
+    for compagno in compagni:
+        gia_votato = (
+            db.query(models.FeedbackLivello)
+            .filter(
+                models.FeedbackLivello.partita_id == partita_id,
+                models.FeedbackLivello.votante_id == votante_id,
+                models.FeedbackLivello.votato_id == compagno.utente_id,
+            )
+            .first()
+        )
+        if gia_votato is None:
+            return compagno
+
+    return None  # ha già valutato tutti
+
+
+def invia_prossima_domanda_feedback(db: Session, partita_id: int, votante_utente_id: int):
+    """
+    Manda al votante la domanda sul PROSSIMO compagno ancora da valutare
+    (un compagno alla volta, con 3 bottoni - punto sollevato dall'utente:
+    più affidabile che chiedere di scrivere a mano tutte le valutazioni
+    in un unico messaggio).
+    """
+    compagno = _prossimo_compagno_da_valutare(db, partita_id, votante_utente_id)
+    if compagno is None:
+        return  # ha già finito di valutare tutti, nessun'altra domanda da mandare
+
+    votante = db.query(models.Utente).filter(models.Utente.id == votante_utente_id).first()
+    nome_compagno = f"{compagno.utente.nome} {compagno.utente.cognome}"
+    testo = f"Come valuti il livello di {nome_compagno}?"
+    invia_richiesta_feedback(votante.whatsapp_numero, testo, nome_compagno=nome_compagno)
+
+
+def rispondi_feedback_da_whatsapp(db: Session, numero_whatsapp: str, testo_risposta: str):
+    """
+    Collega una risposta di valutazione arrivata via WhatsApp (bottone
+    "Più alto" / "Giusto" / "Più basso") alla logica di voto. Come per le
+    risposte di conferma/rifiuto gruppo, capiamo "a cosa" sta rispondendo
+    trovando il prossimo compagno in sospeso per lui - dato che le domande
+    vengono mandate una alla volta, in ordine, non c'è ambiguità.
+    """
+    utente = db.query(models.Utente).filter(models.Utente.whatsapp_numero == numero_whatsapp).first()
+    if utente is None:
+        raise ValueError(f"Nessun utente trovato con il numero {numero_whatsapp}")
+
+    testo_normalizzato = testo_risposta.strip().lower()
+    if "alt" in testo_normalizzato:
+        voto = "PIU_ALTO"
+    elif "giust" in testo_normalizzato:
+        voto = "GIUSTO"
+    elif "bass" in testo_normalizzato:
+        voto = "PIU_BASSO"
+    else:
+        raise ValueError(f"Voto '{testo_risposta}' non riconosciuto (atteso Più alto / Giusto / Più basso)")
+
+    # cerca, tra le partite giocate con finestra ancora aperta, quella più
+    # recente in cui questo utente ha ancora un compagno da valutare
+    partite_aperte = (
+        db.query(models.Partita)
+        .filter(
+            models.Partita.stato == "GIOCATA",
+            models.Partita.finestra_feedback_chiusa == False,
+        )
+        .order_by(models.Partita.data_richiesta_feedback.desc())
+        .all()
+    )
+
+    for partita in partite_aperte:
+        gruppo = db.query(models.Gruppo).filter(models.Gruppo.id == partita.gruppo_id).first()
+        e_membro = (
+            db.query(models.GruppoMembro)
+            .filter(models.GruppoMembro.gruppo_id == gruppo.id, models.GruppoMembro.utente_id == utente.id)
+            .first()
+        )
+        if e_membro is None:
+            continue
+
+        compagno = _prossimo_compagno_da_valutare(db, partita.id, utente.id)
+        if compagno is not None:
+            registra_feedback(db, partita.id, utente.id, compagno.utente_id, voto)
+            invia_prossima_domanda_feedback(db, partita.id, utente.id)
+            return
+
+    raise ValueError(f"Nessuna valutazione in sospeso trovata per {numero_whatsapp}")
+
+
 def controlla_partite_da_segnare_automaticamente(db: Session):
     """
     Da eseguire periodicamente: trova le partite PRENOTATE il cui orario
@@ -62,18 +171,11 @@ def segna_partita_giocata(db: Session, partita_id: int):
 
     partita.stato = "GIOCATA"
     partita.data_richiesta_feedback = datetime.utcnow()
-
-    membri = gruppo.membri
-    for membro in membri:
-        altri = [m for m in membri if m.utente_id != membro.utente_id]
-        nomi_altri = ", ".join(f"{a.utente.nome} {a.utente.cognome}" for a in altri)
-        testo = (
-            f"Ciao! Come è andata la partita? Valuta il livello dei tuoi compagni: {nomi_altri}\n"
-            f"Per ciascuno: PIU_ALTO / GIUSTO / PIU_BASSO"
-        )
-        invia_richiesta_feedback(membro.utente.whatsapp_numero, testo, nomi_compagni=nomi_altri)
-
     db.commit()
+
+    for membro in gruppo.membri:
+        invia_prossima_domanda_feedback(db, partita.id, membro.utente_id)
+
     return partita
 
 
