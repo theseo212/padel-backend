@@ -82,6 +82,8 @@ class CircoloCreate(BaseModel):
     numero_campi: int | None = None
     dotazioni: str | None = Field(None, description="es. 'spogliatoi, bar, parcheggio'")
     note_staff: str | None = None
+    gmaps_url: str | None = None
+    costo_servizio: float | None = None
 
     _valida_apertura = field_validator("orario_apertura")(_valida_formato_orario)
     _valida_chiusura = field_validator("orario_chiusura")(_valida_formato_orario)
@@ -97,6 +99,8 @@ class CircoloUpdate(BaseModel):
     numero_campi: int | None = None
     dotazioni: str | None = None
     note_staff: str | None = None
+    gmaps_url: str | None = None
+    costo_servizio: float | None = None
     attivo: bool | None = None
 
     _valida_apertura = field_validator("orario_apertura")(_valida_formato_orario)

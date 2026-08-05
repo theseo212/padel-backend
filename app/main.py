@@ -204,6 +204,12 @@ def inizializza_database_se_necessario():
         connessione.execute(text(
             "ALTER TABLE messaggi_contatto ADD COLUMN IF NOT EXISTS telefono VARCHAR(30) NOT NULL DEFAULT ''"
         ))
+        connessione.execute(text(
+            "ALTER TABLE circoli ADD COLUMN IF NOT EXISTS gmaps_url VARCHAR(500)"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE circoli ADD COLUMN IF NOT EXISTS costo_servizio NUMERIC(3,2)"
+        ))
         connessione.commit()
 
     db = SessionLocal()
@@ -927,6 +933,8 @@ def _circolo_a_dict(c: models.Circolo) -> dict:
         "numero_campi": c.numero_campi,
         "dotazioni": c.dotazioni,
         "note_staff": c.note_staff,
+        "gmaps_url": c.gmaps_url,
+        "costo_servizio": float(c.costo_servizio) if c.costo_servizio is not None else None,
         "attivo": c.attivo,
     }
 
@@ -965,6 +973,8 @@ def crea_circolo(dati: schemas.CircoloCreate, db: Session = Depends(get_db)):
         numero_campi=dati.numero_campi,
         dotazioni=dati.dotazioni,
         note_staff=dati.note_staff,
+        gmaps_url=dati.gmaps_url,
+        costo_servizio=dati.costo_servizio,
         attivo=True,
     )
     db.add(circolo)

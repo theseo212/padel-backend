@@ -61,6 +61,8 @@ class Circolo(Base):
     numero_campi = Column(Integer, nullable=True)
     dotazioni = Column(String(500), nullable=True)   # es. "spogliatoi, bar, parcheggio, illuminazione"
     note_staff = Column(String(500), nullable=True)   # es. referente, orari contatto, note interne
+    gmaps_url = Column(String(500), nullable=True)   # link Google Maps, per mostrare "dov'è" agli utenti
+    costo_servizio = Column(Numeric(3, 2), nullable=True)   # es. 0.50 - valore usato in futuro
     attivo = Column(Boolean, default=True)
 
 
