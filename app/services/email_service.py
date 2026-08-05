@@ -20,7 +20,7 @@ from app.config import RESEND_API_KEY, EMAIL_MITTENTE, EMAIL_DESTINATARIO_CONTAT
 _RESEND_CONFIGURATO = bool(RESEND_API_KEY)
 
 
-def invia_email_contatto(nome: str, email_mittente: str, messaggio: str) -> bool:
+def invia_email_contatto(nome: str, email_mittente: str, telefono: str, messaggio: str) -> bool:
     """
     Invia l'email del form Contatti alla casella di destinazione, tramite
     l'API di Resend. Restituisce True se l'invio è riuscito (o siamo in
@@ -30,7 +30,8 @@ def invia_email_contatto(nome: str, email_mittente: str, messaggio: str) -> bool
     corpo_testo = (
         f"Hai ricevuto un nuovo messaggio dal form Contatti di {NOME_BRAND}.\n\n"
         f"Nome: {nome}\n"
-        f"Email: {email_mittente}\n\n"
+        f"Email: {email_mittente}\n"
+        f"Telefono: {telefono}\n\n"
         f"Messaggio:\n{messaggio}\n\n"
         f"---\nPuoi rispondere direttamente a questa email, arriverà a {email_mittente}."
     )
