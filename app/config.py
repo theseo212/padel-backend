@@ -19,6 +19,24 @@ PUBLIC_FORM_URL = os.getenv("PUBLIC_FORM_URL", "https://padel-frontend-productio
 # === INDIRIZZO PUBBLICO DI QUESTO BACKEND (per i link "clicca per annullare") ===
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "https://web02-production-7527.up.railway.app")
 
+# === PROTEZIONE PANNELLO OPERATORE ===
+# Nome utente e password per accedere a /admin e a tutte le azioni
+# amministrative. IMPORTANTE: imposta questi valori su Railway con
+# credenziali vere prima di andare in produzione - i valori di riserva
+# qui sotto sono solo per non rompere lo sviluppo locale, NON vanno usati
+# per davvero.
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "cambiami-subito")
+
+# === EMAIL (form contatti, tramite la tua casella Aruba) ===
+# Se questi valori non sono impostati, il sistema salva comunque il
+# messaggio nel database (mai perso), ma non prova a inviare l'email.
+SMTP_HOST = os.getenv("SMTP_HOST", "smtps.aruba.it")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # es. info@annapadel.it
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+EMAIL_DESTINATARIO_CONTATTI = os.getenv("EMAIL_DESTINATARIO_CONTATTI", "info@annapadel.it")
+
 # === TWILIO (invio WhatsApp reale) ===
 # Se questi valori non sono impostati, il sistema resta in modalità
 # "simulazione" (stampa nei log invece di inviare davvero) - lo stesso
