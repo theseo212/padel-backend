@@ -191,6 +191,7 @@ class MessaggioContatto(Base):
     id = Column(Integer, primary_key=True)
     nome = Column(String(150), nullable=False)
     email_mittente = Column(String(255), nullable=False)
+    telefono = Column(String(30), nullable=False)
     messaggio = Column(String(2000), nullable=False)
     email_inviata_con_successo = Column(Boolean, default=False)
     data_invio = Column(DateTime, server_default=func.now())
