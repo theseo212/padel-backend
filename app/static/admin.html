@@ -157,6 +157,10 @@ caricaGruppi();
 setInterval(() => { caricaGruppi(); }, 30000);
 </script>
 
+<h2>Messaggi dal form Contatti</h2>
+<p class="sottotitolo">Ogni messaggio è comunque salvato qui anche se l'invio dell'email dovesse fallire.</p>
+<div id="tabella-contatti"></div>
+
 <h2>Gestione Circoli</h2>
 <p class="sottotitolo">Aggiungi, modifica, disattiva o elimina i circoli disponibili per le richieste degli utenti.</p>
 
@@ -300,7 +304,43 @@ async function eliminaCircolo(id) {
     }
 }
 
+async function caricaMessaggiContatto() {
+    try {
+        const risposta = await fetch('/admin/messaggi-contatto');
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const messaggi = await risposta.json();
+        const contenitore = document.getElementById('tabella-contatti');
+
+        if (messaggi.length === 0) {
+            contenitore.innerHTML = '<p class="vuoto">Nessun messaggio ricevuto ancora.</p>';
+            return;
+        }
+
+        let html = '<table><tr><th>Data</th><th>Nome</th><th>Email</th><th>Messaggio</th><th>Email inviata</th></tr>';
+        for (const m of messaggi) {
+            const data = new Date(m.data).toLocaleString('it-IT');
+            const statoEmail = m.email_inviata
+                ? '<span style="color:#1a7a3a">✓ Sì</span>'
+                : '<span style="color:#a3231f">✗ No (vedi messaggio qui)</span>';
+            html += `<tr>
+                <td>${data}</td>
+                <td>${m.nome}</td>
+                <td><a href="mailto:${m.email}">${m.email}</a></td>
+                <td>${m.messaggio}</td>
+                <td>${statoEmail}</td>
+            </tr>`;
+        }
+        html += '</table>';
+        contenitore.innerHTML = html;
+    } catch (e) {
+        console.error('Errore caricaMessaggiContatto:', e);
+        document.getElementById('tabella-contatti').innerHTML =
+            `<p class="vuoto">Errore nel caricare i messaggi: ${e.message}</p>`;
+    }
+}
+
 caricaCircoli();
+caricaMessaggiContatto();
 </script>
 
 </body>
