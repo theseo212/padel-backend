@@ -201,6 +201,9 @@ def inizializza_database_se_necessario():
         connessione.execute(text(
             "ALTER TABLE utenti ADD COLUMN IF NOT EXISTS data_accettazione_termini TIMESTAMP"
         ))
+        connessione.execute(text(
+            "ALTER TABLE messaggi_contatto ADD COLUMN IF NOT EXISTS telefono VARCHAR(30) NOT NULL DEFAULT ''"
+        ))
         connessione.commit()
 
     db = SessionLocal()
@@ -1154,11 +1157,12 @@ def invia_messaggio_contatto(dati: schemas.ContattoCreate, db: Session = Depends
     dell'email vera alla casella configurata. Anche se l'email dovesse
     fallire, il messaggio non va perso: resta visibile nel pannello.
     """
-    email_inviata = invia_email_contatto(dati.nome, dati.email, dati.messaggio)
+    email_inviata = invia_email_contatto(dati.nome, dati.email, dati.telefono, dati.messaggio)
 
     messaggio_salvato = models.MessaggioContatto(
         nome=dati.nome,
         email_mittente=dati.email,
+        telefono=dati.telefono,
         messaggio=dati.messaggio,
         email_inviata_con_successo=email_inviata,
     )
@@ -1183,6 +1187,7 @@ def lista_messaggi_contatto(db: Session = Depends(get_db)):
             "id": m.id,
             "nome": m.nome,
             "email": m.email_mittente,
+            "telefono": m.telefono,
             "messaggio": m.messaggio,
             "email_inviata": m.email_inviata_con_successo,
             "data": m.data_invio.isoformat() if m.data_invio else None,
