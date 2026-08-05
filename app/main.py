@@ -282,6 +282,22 @@ def pagina_report():
     return FileResponse(percorso)
 
 
+@app.get("/admin/contatti", dependencies=[Depends(verifica_credenziali_admin)])
+def pagina_admin_contatti():
+    """Serve la pagina web dei messaggi ricevuti dal form Contatti."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_contatti.html")
+    return FileResponse(percorso)
+
+
+@app.get("/admin/circoli", dependencies=[Depends(verifica_credenziali_admin)])
+def pagina_admin_circoli():
+    """Serve la pagina web della gestione circoli."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_circoli.html")
+    return FileResponse(percorso)
+
+
 @app.get("/health/db")
 def health_check_database(db: Session = Depends(get_db)):
     """

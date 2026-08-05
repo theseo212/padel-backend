@@ -35,7 +35,7 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "cambiami-subito")
 # Se RESEND_API_KEY non è impostata, il sistema salva comunque il
 # messaggio nel database, ma non prova a inviare l'email.
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-EMAIL_MITTENTE = os.getenv("EMAIL_MITTENTE", "onboarding@resend.dev")  # cambia dopo aver verificato il dominio su Resend
+EMAIL_MITTENTE = os.getenv("EMAIL_MITTENTE", "noreply@annapadel.it")  # dominio verificato su Resend
 EMAIL_DESTINATARIO_CONTATTI = os.getenv("EMAIL_DESTINATARIO_CONTATTI", "info@annapadel.it")
 
 # === TWILIO (invio WhatsApp reale) ===
