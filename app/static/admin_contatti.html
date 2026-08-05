@@ -81,7 +81,7 @@ async function caricaMessaggiContatto() {
             return;
         }
 
-        let html = '<table><tr><th>Data</th><th>Nome</th><th>Email</th><th>Messaggio</th><th>Email inviata</th></tr>';
+        let html = '<table><tr><th>Data</th><th>Nome</th><th>Email</th><th>Telefono</th><th>Messaggio</th><th>Email inviata</th></tr>';
         for (const m of messaggi) {
             const data = new Date(m.data).toLocaleString('it-IT');
             const statoEmail = m.email_inviata
@@ -91,6 +91,7 @@ async function caricaMessaggiContatto() {
                 <td>${data}</td>
                 <td>${m.nome}</td>
                 <td><a href="mailto:${m.email}">${m.email}</a></td>
+                <td>${m.telefono || ''}</td>
                 <td>${m.messaggio}</td>
                 <td>${statoEmail}</td>
             </tr>`;
