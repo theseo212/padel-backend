@@ -101,3 +101,17 @@ class CircoloUpdate(BaseModel):
 
     _valida_apertura = field_validator("orario_apertura")(_valida_formato_orario)
     _valida_chiusura = field_validator("orario_chiusura")(_valida_formato_orario)
+
+
+class ContattoCreate(BaseModel):
+    nome: str = Field(..., min_length=1, max_length=150)
+    email: str = Field(..., min_length=5, max_length=255)
+    messaggio: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("email")
+    @classmethod
+    def _valida_email(cls, valore):
+        import re
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", valore):
+            raise ValueError("Indirizzo email non valido")
+        return valore
