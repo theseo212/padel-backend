@@ -177,3 +177,20 @@ class ConversioneWansportPlaytomic(Base):
     id = Column(Integer, primary_key=True)
     livello_wansport = Column(String(5), unique=True, nullable=False)
     livello_playtomic = Column(Numeric(3, 2), nullable=False)
+
+
+class MessaggioContatto(Base):
+    """
+    Messaggi inviati dal form Contatti del sito. Vengono sempre salvati
+    qui (backup permanente, mai perso), oltre al tentativo di invio email
+    reale - così anche se l'email dovesse fallire per qualche motivo, il
+    messaggio resta comunque consultabile dal pannello operatore.
+    """
+    __tablename__ = "messaggi_contatto"
+
+    id = Column(Integer, primary_key=True)
+    nome = Column(String(150), nullable=False)
+    email_mittente = Column(String(255), nullable=False)
+    messaggio = Column(String(2000), nullable=False)
+    email_inviata_con_successo = Column(Boolean, default=False)
+    data_invio = Column(DateTime, server_default=func.now())
