@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<title>Pannello Operatore — Sistema Padel</title>
+<title>Gruppi in attesa — Pannello AnnaPadel</title>
 <style>
     body {
         font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -14,6 +14,23 @@
     h1 { font-size: 22px; margin-bottom: 4px; }
     h2 { font-size: 17px; margin-top: 32px; color: #333; }
     p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    nav.menu-admin {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0 20px;
+        flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none;
+        color: #444;
+        background: white;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
     table {
         width: 100%;
         border-collapse: collapse;
@@ -46,39 +63,25 @@
     .btn-verde:hover { background: #bfe9cd; }
     .btn-rosso { background: #fbdcdc; color: #a3231f; }
     .btn-rosso:hover { background: #f7c4c4; }
-    .btn-blu { background: #dbeafe; color: #1d4ed8; }
-    .btn-blu:hover { background: #c3ddfd; }
     .messaggio {
         margin-top: 10px; padding: 8px 12px; border-radius: 6px;
         font-size: 13px; display: none;
     }
     .messaggio.ok { background: #d5f2df; color: #1a7a3a; }
     .messaggio.errore { background: #fbdcdc; color: #a3231f; }
-    .form-circolo {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 8px;
-        background: white;
-        padding: 14px;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    }
-    .form-circolo input {
-        padding: 8px 10px;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        font-size: 13px;
-        flex: 1 1 160px;
-    }
-    .form-circolo input[placeholder="Nome *"] { flex: 1 1 200px; }
 </style>
 </head>
 <body>
 
-<h1>ߎ Pannello Operatore</h1>
-<p class="sottotitolo">Gestione prenotazioni campi e partite giocate — Sistema Prenotazione Padel</p>
-<p><a href="/admin/report" style="color:#2563eb;text-decoration:none;font-size:14px;">ߓ Vai al report partite →</a></p>
+<h1>🎾 Pannello Operatore</h1>
+<p class="sottotitolo">Gestione prenotazioni campi e partite giocate — AnnaPadel</p>
+
+<nav class="menu-admin">
+    <a href="/admin" class="attivo">Gruppi in attesa</a>
+    <a href="/admin/contatti">Messaggi dal form</a>
+    <a href="/admin/circoli">Gestione Circoli</a>
+    <a href="/admin/report">Report Partite</a>
+</nav>
 
 <h2>Gruppi in attesa di prenotazione</h2>
 <p class="sottotitolo">Verifica la disponibilità del campo (su Playtomic o telefonando al circolo), poi clicca il bottone corrispondente.</p>
@@ -150,197 +153,8 @@ async function prenotazione(gruppoId, disponibile) {
     caricaGruppi();
 }
 
-// Carica tutto all'apertura della pagina
 caricaGruppi();
-
-// Aggiorna automaticamente ogni 30 secondi, così l'operatore vede le novità senza ricaricare
 setInterval(() => { caricaGruppi(); }, 30000);
-</script>
-
-<h2>Messaggi dal form Contatti</h2>
-<p class="sottotitolo">Ogni messaggio è comunque salvato qui anche se l'invio dell'email dovesse fallire.</p>
-<div id="tabella-contatti"></div>
-
-<h2>Gestione Circoli</h2>
-<p class="sottotitolo">Aggiungi, modifica, disattiva o elimina i circoli disponibili per le richieste degli utenti.</p>
-
-<div class="form-circolo">
-    <input type="text" id="c-nome" placeholder="Nome *">
-    <input type="text" id="c-indirizzo" placeholder="Indirizzo">
-    <input type="text" id="c-provincia" placeholder="Provincia (es. TO)" maxlength="10" style="max-width:140px">
-    <input type="text" id="c-telefono" placeholder="Telefono">
-    <input type="number" id="c-campi" placeholder="N. campi" min="1">
-    <input type="text" id="c-note" placeholder="Note (facoltativo)">
-    <button class="btn-blu" onclick="creaCircolo()">+ Aggiungi circolo</button>
-</div>
-<div id="msg-circoli" class="messaggio"></div>
-<div id="tabella-circoli"></div>
-
-<script>
-async function caricaCircoli() {
-    try {
-        const risposta = await fetch('/circoli');
-        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
-        const circoli = await risposta.json();
-        const contenitore = document.getElementById('tabella-circoli');
-
-        if (circoli.length === 0) {
-            contenitore.innerHTML = '<p class="vuoto">Nessun circolo inserito ancora.</p>';
-            return;
-        }
-
-        let html = `<table><tr>
-            <th>Nome</th><th>Indirizzo</th><th>Provincia</th><th>Telefono</th>
-            <th>Campi</th><th>Note</th><th>Stato</th><th>Azioni</th>
-        </tr>`;
-        for (const c of circoli) {
-            const stato = c.attivo
-                ? '<span style="color:#1a7a3a">Attivo</span>'
-                : '<span style="color:#999">Disattivato</span>';
-            html += `<tr>
-                <td>${c.nome}</td>
-                <td>${c.indirizzo || ''}</td>
-                <td>${c.provincia || ''}</td>
-                <td>${c.telefono || ''}</td>
-                <td>${c.numero_campi ?? ''}</td>
-                <td>${c.dotazioni || ''}</td>
-                <td>${stato}</td>
-                <td>
-                    <button class="btn-blu" onclick="toggleAttivo(${c.id}, ${!c.attivo})">${c.attivo ? 'Disattiva' : 'Riattiva'}</button>
-                    <button class="btn-rosso" onclick="eliminaCircolo(${c.id})">Elimina</button>
-                </td>
-            </tr>`;
-        }
-        html += '</table>';
-        contenitore.innerHTML = html;
-    } catch (e) {
-        console.error('Errore caricaCircoli:', e);
-        document.getElementById('tabella-circoli').innerHTML =
-            `<p class="vuoto">Errore nel caricare i circoli: ${e.message}</p>`;
-    }
-}
-
-function mostraMessaggioCircoli(testo, ok) {
-    const msgDiv = document.getElementById('msg-circoli');
-    msgDiv.textContent = testo;
-    msgDiv.className = 'messaggio ' + (ok ? 'ok' : 'errore');
-    msgDiv.style.display = 'block';
-    setTimeout(() => { msgDiv.style.display = 'none'; }, 5000);
-}
-
-async function creaCircolo() {
-    const nome = document.getElementById('c-nome').value.trim();
-    if (!nome) {
-        mostraMessaggioCircoli('Il nome del circolo è obbligatorio.', false);
-        return;
-    }
-
-    const corpo = {
-        nome: nome,
-        indirizzo: document.getElementById('c-indirizzo').value || null,
-        provincia: document.getElementById('c-provincia').value || null,
-        telefono: document.getElementById('c-telefono').value || null,
-        numero_campi: document.getElementById('c-campi').value ? parseInt(document.getElementById('c-campi').value) : null,
-        dotazioni: document.getElementById('c-note').value || null,
-    };
-
-    try {
-        const risposta = await fetch('/circoli', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(corpo),
-        });
-
-        if (risposta.ok) {
-            mostraMessaggioCircoli('✅ Circolo aggiunto.', true);
-            document.querySelectorAll('.form-circolo input').forEach(el => el.value = '');
-            caricaCircoli();
-        } else {
-            const errore = await risposta.json().catch(() => ({}));
-            mostraMessaggioCircoli('❌ ' + (errore.detail || `Errore del server (${risposta.status})`), false);
-        }
-    } catch (e) {
-        console.error('Errore creaCircolo:', e);
-        mostraMessaggioCircoli('❌ Impossibile contattare il server: ' + e.message, false);
-    }
-}
-
-async function toggleAttivo(id, nuovoStato) {
-    try {
-        const risposta = await fetch(`/circoli/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ attivo: nuovoStato }),
-        });
-        if (risposta.ok) {
-            mostraMessaggioCircoli(nuovoStato ? '✅ Circolo riattivato.' : '✅ Circolo disattivato.', true);
-            caricaCircoli();
-        } else {
-            const errore = await risposta.json().catch(() => ({}));
-            mostraMessaggioCircoli('❌ ' + (errore.detail || `Errore del server (${risposta.status})`), false);
-        }
-    } catch (e) {
-        console.error('Errore toggleAttivo:', e);
-        mostraMessaggioCircoli('❌ Impossibile contattare il server: ' + e.message, false);
-    }
-}
-
-async function eliminaCircolo(id) {
-    if (!confirm('Eliminare definitivamente questo circolo? L\'operazione non è reversibile.')) {
-        return;
-    }
-    try {
-        const risposta = await fetch(`/circoli/${id}`, { method: 'DELETE' });
-        if (risposta.ok) {
-            mostraMessaggioCircoli('✅ Circolo eliminato.', true);
-            caricaCircoli();
-        } else {
-            const errore = await risposta.json().catch(() => ({}));
-            mostraMessaggioCircoli('❌ ' + (errore.detail || 'Impossibile eliminare questo circolo'), false);
-        }
-    } catch (e) {
-        console.error('Errore eliminaCircolo:', e);
-        mostraMessaggioCircoli('❌ Impossibile contattare il server: ' + e.message, false);
-    }
-}
-
-async function caricaMessaggiContatto() {
-    try {
-        const risposta = await fetch('/admin/messaggi-contatto');
-        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
-        const messaggi = await risposta.json();
-        const contenitore = document.getElementById('tabella-contatti');
-
-        if (messaggi.length === 0) {
-            contenitore.innerHTML = '<p class="vuoto">Nessun messaggio ricevuto ancora.</p>';
-            return;
-        }
-
-        let html = '<table><tr><th>Data</th><th>Nome</th><th>Email</th><th>Messaggio</th><th>Email inviata</th></tr>';
-        for (const m of messaggi) {
-            const data = new Date(m.data).toLocaleString('it-IT');
-            const statoEmail = m.email_inviata
-                ? '<span style="color:#1a7a3a">✓ Sì</span>'
-                : '<span style="color:#a3231f">✗ No (vedi messaggio qui)</span>';
-            html += `<tr>
-                <td>${data}</td>
-                <td>${m.nome}</td>
-                <td><a href="mailto:${m.email}">${m.email}</a></td>
-                <td>${m.messaggio}</td>
-                <td>${statoEmail}</td>
-            </tr>`;
-        }
-        html += '</table>';
-        contenitore.innerHTML = html;
-    } catch (e) {
-        console.error('Errore caricaMessaggiContatto:', e);
-        document.getElementById('tabella-contatti').innerHTML =
-            `<p class="vuoto">Errore nel caricare i messaggi: ${e.message}</p>`;
-    }
-}
-
-caricaCircoli();
-caricaMessaggiContatto();
 </script>
 
 </body>
