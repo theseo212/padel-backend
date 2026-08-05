@@ -15,6 +15,23 @@
     p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
     a.torna-indietro { font-size: 13px; color: #2563eb; text-decoration: none; }
     a.torna-indietro:hover { text-decoration: underline; }
+    nav.menu-admin {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0 20px;
+        flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none;
+        color: #444;
+        background: white;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
 
     .filtri {
         display: flex;
@@ -86,7 +103,12 @@
 </head>
 <body>
 
-<a class="torna-indietro" href="/admin">← Torna al pannello operatore</a>
+<nav class="menu-admin">
+    <a href="/admin">Gruppi in attesa</a>
+    <a href="/admin/contatti">Messaggi dal form</a>
+    <a href="/admin/circoli">Gestione Circoli</a>
+    <a href="/admin/report" class="attivo">Report Partite</a>
+</nav>
 <h1>📊 Report Partite</h1>
 <p class="sottotitolo">Elenco delle partite concluse, con filtri e esportazione in CSV (apribile direttamente in Excel).</p>
 
