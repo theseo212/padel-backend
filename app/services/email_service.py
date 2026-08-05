@@ -54,6 +54,11 @@ def invia_email_contatto(nome: str, email_mittente: str, messaggio: str) -> bool
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json",
+                # Senza uno User-Agent chiaro, Cloudflare (che protegge le
+                # API di Resend) a volte blocca la richiesta trattandola
+                # come un bot sospetto (errore Cloudflare 1010) - questo
+                # header risolve il problema, identificandoci chiaramente.
+                "User-Agent": "AnnaPadel-ContactForm/1.0",
             },
             method="POST",
         )
