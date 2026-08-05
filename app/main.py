@@ -26,6 +26,7 @@ from app import models, schemas, config
 from app.services.bitmask import crea_bitmask, bitmask_a_fasce_leggibili
 from app.services.conversione_livello import ottieni_livello_playtomic
 from app.services.whatsapp import genera_otp, invia_otp_whatsapp, invia_riepilogo_richiesta
+from app.services.email_service import invia_email_contatto
 from app.matching.motore import esegui_ciclo_matching
 from app.matching.gestione_gruppi import rispondi_a_gruppo, controlla_timeout_gruppi, rispondi_a_gruppo_da_whatsapp
 from app.matching.prenotazione import conferma_prenotazione, fallisce_prenotazione
@@ -179,6 +180,8 @@ def inizializza_database_se_necessario():
 
     # "Migrazioni leggere": colonne aggiunte dopo la primissima creazione
     # delle tabelle, che vanno aggiunte anche ai database già esistenti.
+    # (la tabella messaggi_contatto invece è nuova: create_all la crea da
+    # sola, non serve nessuna riga qui sotto per lei)
     with engine.connect() as connessione:
         connessione.execute(text("ALTER TABLE circoli ADD COLUMN IF NOT EXISTS provincia VARCHAR(10)"))
         connessione.execute(text(
@@ -1125,3 +1128,48 @@ def esporta_report_partite_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=report_partite.csv"},
     )
+
+
+@app.post("/contatti")
+def invia_messaggio_contatto(dati: schemas.ContattoCreate, db: Session = Depends(get_db)):
+    """
+    Endpoint pubblico del form Contatti. Il messaggio viene SEMPRE salvato
+    nel database (backup permanente), e viene comunque tentato l'invio
+    dell'email vera alla casella configurata. Anche se l'email dovesse
+    fallire, il messaggio non va perso: resta visibile nel pannello.
+    """
+    email_inviata = invia_email_contatto(dati.nome, dati.email, dati.messaggio)
+
+    messaggio_salvato = models.MessaggioContatto(
+        nome=dati.nome,
+        email_mittente=dati.email,
+        messaggio=dati.messaggio,
+        email_inviata_con_successo=email_inviata,
+    )
+    db.add(messaggio_salvato)
+    db.commit()
+
+    return {
+        "messaggio": "Grazie! Ho ricevuto il tuo messaggio, ti risponderò il prima possibile.",
+    }
+
+
+@app.get("/admin/messaggi-contatto", dependencies=[Depends(verifica_credenziali_admin)])
+def lista_messaggi_contatto(db: Session = Depends(get_db)):
+    """Restituisce tutti i messaggi ricevuti dal form Contatti, i più recenti per primi."""
+    messaggi = (
+        db.query(models.MessaggioContatto)
+        .order_by(models.MessaggioContatto.data_invio.desc())
+        .all()
+    )
+    return [
+        {
+            "id": m.id,
+            "nome": m.nome,
+            "email": m.email_mittente,
+            "messaggio": m.messaggio,
+            "email_inviata": m.email_inviata_con_successo,
+            "data": m.data_invio.isoformat() if m.data_invio else None,
+        }
+        for m in messaggi
+    ]
