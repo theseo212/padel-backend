@@ -111,12 +111,17 @@
     <input type="text" id="c-telefono" placeholder="Telefono">
     <input type="number" id="c-campi" placeholder="N. campi" min="1">
     <input type="text" id="c-note" placeholder="Note (facoltativo)">
-    <button class="btn-blu" onclick="creaCircolo()">+ Aggiungi circolo</button>
+    <input type="text" id="c-gmaps" placeholder="Link Google Maps">
+    <input type="number" id="c-costo" placeholder="Costo servizio (es. 0.50)" min="0" max="9.99" step="0.01" style="max-width:180px">
+    <button class="btn-blu" id="bottone-form-circolo" onclick="creaCircolo()">+ Aggiungi circolo</button>
+    <button class="btn-rosso" id="bottone-annulla-modifica" onclick="annullaModifica()" style="display:none">Annulla modifica</button>
 </div>
 <div id="msg-circoli" class="messaggio"></div>
 <div id="tabella-circoli"></div>
 
 <script>
+let modificandoId = null;  // null = sto creando un nuovo circolo; altrimenti sto modificando quello con questo id
+
 async function caricaCircoli() {
     try {
         const risposta = await fetch('/circoli');
@@ -131,12 +136,16 @@ async function caricaCircoli() {
 
         let html = `<table><tr>
             <th>Nome</th><th>Indirizzo</th><th>Provincia</th><th>Telefono</th>
-            <th>Campi</th><th>Note</th><th>Stato</th><th>Azioni</th>
+            <th>Campi</th><th>Note</th><th>Gmaps</th><th>Costo</th><th>Stato</th><th>Azioni</th>
         </tr>`;
         for (const c of circoli) {
             const stato = c.attivo
                 ? '<span style="color:#1a7a3a">Attivo</span>'
                 : '<span style="color:#999">Disattivato</span>';
+            const linkGmaps = c.gmaps_url
+                ? `<a href="${c.gmaps_url}" target="_blank" rel="noopener noreferrer">Apri</a>`
+                : '';
+            const costo = c.costo_servizio != null ? c.costo_servizio.toFixed(2) : '';
             html += `<tr>
                 <td>${c.nome}</td>
                 <td>${c.indirizzo || ''}</td>
@@ -144,8 +153,11 @@ async function caricaCircoli() {
                 <td>${c.telefono || ''}</td>
                 <td>${c.numero_campi ?? ''}</td>
                 <td>${c.dotazioni || ''}</td>
+                <td>${linkGmaps}</td>
+                <td>${costo}</td>
                 <td>${stato}</td>
                 <td>
+                    <button class="btn-blu" onclick='modificaCircolo(${JSON.stringify(c)})'>Modifica</button>
                     <button class="btn-blu" onclick="toggleAttivo(${c.id}, ${!c.attivo})">${c.attivo ? 'Disattiva' : 'Riattiva'}</button>
                     <button class="btn-rosso" onclick="eliminaCircolo(${c.id})">Elimina</button>
                 </td>
@@ -175,6 +187,7 @@ async function creaCircolo() {
         return;
     }
 
+    const costoValore = document.getElementById('c-costo').value;
     const corpo = {
         nome: nome,
         indirizzo: document.getElementById('c-indirizzo').value || null,
@@ -182,18 +195,24 @@ async function creaCircolo() {
         telefono: document.getElementById('c-telefono').value || null,
         numero_campi: document.getElementById('c-campi').value ? parseInt(document.getElementById('c-campi').value) : null,
         dotazioni: document.getElementById('c-note').value || null,
+        gmaps_url: document.getElementById('c-gmaps').value || null,
+        costo_servizio: costoValore ? parseFloat(costoValore) : null,
     };
 
+    const inModifica = modificandoId !== null;
+    const url = inModifica ? `/circoli/${modificandoId}` : '/circoli';
+    const metodo = inModifica ? 'PUT' : 'POST';
+
     try {
-        const risposta = await fetch('/circoli', {
-            method: 'POST',
+        const risposta = await fetch(url, {
+            method: metodo,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(corpo),
         });
 
         if (risposta.ok) {
-            mostraMessaggioCircoli('✅ Circolo aggiunto.', true);
-            document.querySelectorAll('.form-circolo input').forEach(el => el.value = '');
+            mostraMessaggioCircoli(inModifica ? '✅ Circolo modificato.' : '✅ Circolo aggiunto.', true);
+            annullaModifica();  // pulisce il form e torna alla modalità "nuovo circolo"
             caricaCircoli();
         } else {
             const errore = await risposta.json().catch(() => ({}));
@@ -203,6 +222,30 @@ async function creaCircolo() {
         console.error('Errore creaCircolo:', e);
         mostraMessaggioCircoli('❌ Impossibile contattare il server: ' + e.message, false);
     }
+}
+
+function modificaCircolo(circolo) {
+    modificandoId = circolo.id;
+    document.getElementById('c-nome').value = circolo.nome || '';
+    document.getElementById('c-indirizzo').value = circolo.indirizzo || '';
+    document.getElementById('c-provincia').value = circolo.provincia || '';
+    document.getElementById('c-telefono').value = circolo.telefono || '';
+    document.getElementById('c-campi').value = circolo.numero_campi ?? '';
+    document.getElementById('c-note').value = circolo.dotazioni || '';
+    document.getElementById('c-gmaps').value = circolo.gmaps_url || '';
+    document.getElementById('c-costo').value = circolo.costo_servizio ?? '';
+
+    document.getElementById('bottone-form-circolo').textContent = '💾 Salva modifiche';
+    document.getElementById('bottone-annulla-modifica').style.display = 'inline-block';
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function annullaModifica() {
+    modificandoId = null;
+    document.querySelectorAll('.form-circolo input').forEach(el => el.value = '');
+    document.getElementById('bottone-form-circolo').textContent = '+ Aggiungi circolo';
+    document.getElementById('bottone-annulla-modifica').style.display = 'none';
 }
 
 async function toggleAttivo(id, nuovoStato) {
