@@ -106,6 +106,7 @@ class CircoloUpdate(BaseModel):
 class ContattoCreate(BaseModel):
     nome: str = Field(..., min_length=1, max_length=150)
     email: str = Field(..., min_length=5, max_length=255)
+    telefono: str = Field(..., min_length=5, max_length=30)
     messaggio: str = Field(..., min_length=1, max_length=2000)
 
     @field_validator("email")
