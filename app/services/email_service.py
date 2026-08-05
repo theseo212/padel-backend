@@ -62,6 +62,14 @@ def invia_email_contatto(nome: str, email_mittente: str, messaggio: str) -> bool
                 return True
             print(f"[EMAIL][ERRORE INVIO] status inatteso {risposta.status} per {nome} <{email_mittente}>")
             return False
+    except urllib.error.HTTPError as errore_http:
+        # Leggiamo il corpo della risposta di errore: Resend di solito
+        # spiega ESATTAMENTE il motivo (dominio non corrispondente,
+        # chiave con permessi limitati, ecc.) - molto più utile del
+        # semplice codice "403 Forbidden" da solo.
+        corpo_errore = errore_http.read().decode("utf-8", errors="replace")
+        print(f"[EMAIL][ERRORE INVIO] {errore_http.code} per {nome} <{email_mittente}>: {corpo_errore}")
+        return False
     except Exception as errore:
         print(f"[EMAIL][ERRORE INVIO] messaggio di {nome} <{email_mittente}>: {errore}")
         return False
