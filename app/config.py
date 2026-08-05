@@ -28,13 +28,14 @@ BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "https://web02-production-7
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "cambiami-subito")
 
-# === EMAIL (form contatti, tramite la tua casella Aruba) ===
-# Se questi valori non sono impostati, il sistema salva comunque il
-# messaggio nel database (mai perso), ma non prova a inviare l'email.
-SMTP_HOST = os.getenv("SMTP_HOST", "smtps.aruba.it")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # es. info@annapadel.it
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+# === EMAIL (form contatti) ===
+# Railway blocca le porte SMTP sui piani Free/Trial/Hobby (policy fissa,
+# non aggirabile) - usiamo quindi Resend, un servizio che invia email
+# tramite HTTPS (porta 443, mai bloccata) invece che SMTP diretto.
+# Se RESEND_API_KEY non è impostata, il sistema salva comunque il
+# messaggio nel database, ma non prova a inviare l'email.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+EMAIL_MITTENTE = os.getenv("EMAIL_MITTENTE", "onboarding@resend.dev")  # cambia dopo aver verificato il dominio su Resend
 EMAIL_DESTINATARIO_CONTATTI = os.getenv("EMAIL_DESTINATARIO_CONTATTI", "info@annapadel.it")
 
 # === TWILIO (invio WhatsApp reale) ===
