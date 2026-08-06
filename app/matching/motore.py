@@ -41,22 +41,38 @@ def circoli_comuni(gruppo: list) -> list:
     return [c for c in gruppo[0].circoli if c.id in comuni]
 
 
-def scegli_circolo(circoli_candidati: list, gruppo: list) -> models.Circolo | None:
+def scegli_circolo(circoli_candidati: list, gruppo: list, db: Session) -> models.Circolo | None:
     """
-    Sceglie il circolo comune con l'intersezione oraria più ampia;
-    in caso di parità, l'id numerico più basso (punto 20 - deterministico).
+    Sceglie il circolo tra quelli comuni a tutti e 4 i giocatori, bilanciando
+    il carico: preferisce il circolo con MENO partite già attive (proposte,
+    confermate o prenotate - non annullate) per quello stesso giorno, per
+    non concentrare sempre tutto sullo stesso circolo quando ce n'è un
+    altro ugualmente valido e più libero.
+    In caso di parità anche nel conteggio, l'id numerico più basso fa da
+    ultimo criterio, solo per restare deterministici (punto 20).
     """
-    intersezione = bitmask_intersezione(gruppo)
-    ampiezza = conta_slot_consecutivi_massimi(intersezione)
-    # Nota: l'ampiezza oraria dipende dalle disponibilità dei 4 giocatori,
-    # non dal circolo in sé (i circoli in questa versione non hanno una
-    # propria disponibilità oraria distinta da quella dichiarata dagli utenti,
-    # solo orari di apertura/chiusura - qui semplificato assumendo che il
-    # circolo sia aperto nella fascia richiesta). Il criterio si riduce quindi
-    # al tie-break sull'id più basso quando più circoli sono ugualmente comuni.
     if not circoli_candidati:
         return None
-    return min(circoli_candidati, key=lambda c: c.id)
+    if len(circoli_candidati) == 1:
+        return circoli_candidati[0]
+
+    giorno = gruppo[0].giorno
+    conteggio_per_circolo = {}
+    for circolo in circoli_candidati:
+        conteggio_per_circolo[circolo.id] = (
+            db.query(models.Gruppo)
+            .filter(
+                models.Gruppo.circolo_id == circolo.id,
+                models.Gruppo.giorno == giorno,
+                models.Gruppo.stato != "ANNULLATO",
+            )
+            .count()
+        )
+
+    carico_minimo = min(conteggio_per_circolo.values())
+    candidati_al_carico_minimo = [c for c in circoli_candidati if conteggio_per_circolo[c.id] == carico_minimo]
+
+    return min(candidati_al_carico_minimo, key=lambda c: c.id)
 
 
 def bitmask_intersezione(gruppo: list) -> int:
@@ -114,7 +130,7 @@ def trova_candidati_per_seed(seed, richieste_attive: list) -> list:
     return candidati
 
 
-def genera_combinazioni_valide(seed, candidati: list, adesso: datetime) -> list:
+def genera_combinazioni_valide(seed, candidati: list, adesso: datetime, db: Session) -> list:
     """
     Prova tutte le combinazioni di 3 candidati (+ seed = gruppo di 4) e
     restituisce quelle valide, con punteggio, slot orario e circolo scelto.
@@ -144,7 +160,7 @@ def genera_combinazioni_valide(seed, candidati: list, adesso: datetime) -> list:
         if slot_partita is None:
             continue
 
-        circolo_scelto = scegli_circolo(comuni, gruppo)
+        circolo_scelto = scegli_circolo(comuni, gruppo, db)
         punteggio = calcola_punteggio(gruppo, slot_partita, circolo_scelto, adesso)
 
         gruppi_possibili.append({
@@ -275,7 +291,7 @@ def esegui_ciclo_matching(db: Session):
         if len(candidati) < 3:
             continue
 
-        gruppi_possibili = genera_combinazioni_valide(seed, candidati, adesso)
+        gruppi_possibili = genera_combinazioni_valide(seed, candidati, adesso, db)
         tutti_i_gruppi_candidati.extend(gruppi_possibili)
 
     gruppi_finali = risolvi_conflitti(tutti_i_gruppi_candidati)
