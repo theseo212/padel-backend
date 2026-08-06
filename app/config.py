@@ -38,6 +38,16 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_MITTENTE = os.getenv("EMAIL_MITTENTE", "noreply@annapadel.it")  # dominio verificato su Resend
 EMAIL_DESTINATARIO_CONTATTI = os.getenv("EMAIL_DESTINATARIO_CONTATTI", "info@annapadel.it")
 
+# === AVVISI ALL'OPERATORE (te) su WhatsApp ===
+# Numeri che ricevono un avviso ogni volta che un gruppo è pronto per la
+# prenotazione. Puoi mettere anche più numeri, separati da virgola
+# (es. "+393713893946,+393331234567") - non serve toccare il codice per
+# aggiungerne altri in futuro, basta modificare questa variabile su Railway.
+ADMIN_WHATSAPP_NUMERI = [
+    numero.strip() for numero in os.getenv("ADMIN_WHATSAPP_NUMERI", "").split(",") if numero.strip()
+]
+TEMPLATE_NOTIFICA_OPERATORE = os.getenv("TEMPLATE_NOTIFICA_OPERATORE")
+
 # === TWILIO (invio WhatsApp reale) ===
 # Se questi valori non sono impostati, il sistema resta in modalità
 # "simulazione" (stampa nei log invece di inviare davvero) - lo stesso
