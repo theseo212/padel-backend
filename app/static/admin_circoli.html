@@ -117,25 +117,76 @@
     <button class="btn-rosso" id="bottone-annulla-modifica" onclick="annullaModifica()" style="display:none">Annulla modifica</button>
 </div>
 <div id="msg-circoli" class="messaggio"></div>
+
+<div style="margin-top:16px;">
+    <input type="text" id="ricerca-circoli" placeholder="🔍 Cerca per nome, indirizzo o provincia…"
+           style="width:100%; max-width:400px; padding:9px 12px; border:1px solid #ddd; border-radius:8px; font-size:14px; box-sizing:border-box;"
+           oninput="renderizzaTabellaCircoli()">
+</div>
 <div id="tabella-circoli"></div>
 
 <script>
 let modificandoId = null;  // null = sto creando un nuovo circolo; altrimenti sto modificando quello con questo id
+let circoliCompleti = [];  // tutti i circoli scaricati dal server, non ancora filtrati/ordinati
+let ordinamentoCircoli = { campo: 'nome', direzione: 'asc' };
 
 async function caricaCircoli() {
     try {
         const risposta = await fetch('/circoli');
         if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
-        const circoli = await risposta.json();
+        circoliCompleti = await risposta.json();
+        renderizzaTabellaCircoli();
+    } catch (e) {
+        console.error('Errore caricaCircoli:', e);
+        document.getElementById('tabella-circoli').innerHTML =
+            `<p class="vuoto">Errore nel caricare i circoli: ${e.message}</p>`;
+    }
+}
+
+function cambiaOrdinamentoCircoli(campo) {
+    if (ordinamentoCircoli.campo === campo) {
+        ordinamentoCircoli.direzione = ordinamentoCircoli.direzione === 'asc' ? 'desc' : 'asc';
+    } else {
+        ordinamentoCircoli = { campo, direzione: 'asc' };
+    }
+    renderizzaTabellaCircoli();
+}
+
+function renderizzaTabellaCircoli() {
         const contenitore = document.getElementById('tabella-circoli');
+        const testoRicerca = document.getElementById('ricerca-circoli').value.trim().toLowerCase();
+
+        let circoli = circoliCompleti.filter((c) => {
+            if (!testoRicerca) return true;
+            const campoRicerca = `${c.nome} ${c.indirizzo || ''} ${c.provincia || ''}`.toLowerCase();
+            return campoRicerca.includes(testoRicerca);
+        });
+
+        circoli.sort((a, b) => {
+            const campo = ordinamentoCircoli.campo;
+            const valA = (a[campo] || '').toString().toLowerCase();
+            const valB = (b[campo] || '').toString().toLowerCase();
+            const confronto = valA.localeCompare(valB, 'it');
+            return ordinamentoCircoli.direzione === 'asc' ? confronto : -confronto;
+        });
 
         if (circoli.length === 0) {
-            contenitore.innerHTML = '<p class="vuoto">Nessun circolo inserito ancora.</p>';
+            contenitore.innerHTML = circoliCompleti.length === 0
+                ? '<p class="vuoto">Nessun circolo inserito ancora.</p>'
+                : '<p class="vuoto">Nessun circolo trovato con questa ricerca.</p>';
             return;
         }
 
+        const freccia = (campo) => {
+            if (ordinamentoCircoli.campo !== campo) return ' ⇅';
+            return ordinamentoCircoli.direzione === 'asc' ? ' ▲' : ' ▼';
+        };
+
         let html = `<table><tr>
-            <th>Nome</th><th>Indirizzo</th><th>Provincia</th><th>Telefono</th>
+            <th style="cursor:pointer" onclick="cambiaOrdinamentoCircoli('nome')">Nome${freccia('nome')}</th>
+            <th>Indirizzo</th>
+            <th style="cursor:pointer" onclick="cambiaOrdinamentoCircoli('provincia')">Provincia${freccia('provincia')}</th>
+            <th>Telefono</th>
             <th>Campi</th><th>Note</th><th>Gmaps</th><th>Costo</th><th>Stato</th><th>Azioni</th>
         </tr>`;
         for (const c of circoli) {
@@ -165,11 +216,6 @@ async function caricaCircoli() {
         }
         html += '</table>';
         contenitore.innerHTML = html;
-    } catch (e) {
-        console.error('Errore caricaCircoli:', e);
-        document.getElementById('tabella-circoli').innerHTML =
-            `<p class="vuoto">Errore nel caricare i circoli: ${e.message}</p>`;
-    }
 }
 
 function mostraMessaggioCircoli(testo, ok) {
