@@ -88,7 +88,7 @@ def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, v
 
 def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str) -> bool:
     testo = (
-        f"Ciao! Sono Anna ߑ Il tuo codice di verifica per {NOME_BRAND} è {codice_otp}, "
+        f"Ciao! Sono Anna 👋 Il tuo codice di verifica per {NOME_BRAND} è {codice_otp}, "
         f"valido {OTP_DURATA_VALIDITA_MINUTI} minuti."
     ) + FIRMA_MESSAGGIO
     variabili = {"1": codice_otp, "2": str(OTP_DURATA_VALIDITA_MINUTI)}
@@ -118,7 +118,7 @@ def invia_proposta_gruppo(numero_whatsapp: str, testo_proposta: str, circolo: st
 def invia_annullamento_gruppo(numero_whatsapp: str, motivo: str):
     testo = (
         f"Ops! Ho dovuto annullare questa partita. Motivo: {motivo}\n"
-        f"Non preoccuparti, continuo subito a cercarti nuovi compagni! ߎ"
+        f"Non preoccuparti, continuo subito a cercarti nuovi compagni! 🎾"
     ) + FIRMA_MESSAGGIO
     variabili = {"1": motivo}
     _invia(numero_whatsapp, testo, TEMPLATE_ANNULLAMENTO, variabili)
@@ -154,7 +154,7 @@ def invia_richiesta_feedback(numero_whatsapp: str, testo: str, nome_compagno: st
 
 
 def invia_promemoria_feedback(numero_whatsapp: str):
-    testo = "Psst! Non dimenticare di valutare i tuoi compagni dell'ultima partita ߘ" + FIRMA_MESSAGGIO
+    testo = "Psst! Non dimenticare di valutare i tuoi compagni dell'ultima partita 😊" + FIRMA_MESSAGGIO
     _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_FEEDBACK, {})
 
 
@@ -162,6 +162,19 @@ def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str
     variabili = {"1": nome, "2": link_annulla, "3": link_nuova} if nome else None
     _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_MANCATA_PARTITA, variabili,
            etichetta_simulazione=" - PROMEMORIA")
+
+
+def invia_notifica_operatore(testo: str, circolo: str = "", giorno: str = "", orario: str = "", giocatori: str = ""):
+    """
+    Avvisa TUTTI i numeri configurati in ADMIN_WHATSAPP_NUMERI (uno o più)
+    che un gruppo è pronto per la prenotazione. Se non è ancora configurato
+    nessun template dedicato, prova comunque a mandare il testo libero
+    (funziona se l'operatore ha già una conversazione aperta col numero).
+    """
+    from app.config import ADMIN_WHATSAPP_NUMERI, TEMPLATE_NOTIFICA_OPERATORE
+    variabili = {"1": circolo, "2": giorno, "3": orario, "4": giocatori} if circolo else None
+    for numero in ADMIN_WHATSAPP_NUMERI:
+        _invia(numero, testo, TEMPLATE_NOTIFICA_OPERATORE, variabili, etichetta_simulazione=" - AVVISO OPERATORE")
 
 
 def invia_conferma_ricevuta(numero_whatsapp: str, testo: str):
