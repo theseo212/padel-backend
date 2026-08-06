@@ -3,8 +3,11 @@ Costruisce il testo dei messaggi WhatsApp legati a un gruppo (Step 03)
 e li invia a ciascuno dei 4 giocatori coinvolti.
 """
 
+from app import config
 from app.config import ORA_INIZIO_GIORNATA, DURATA_SLOT_MINUTI
-from app.services.whatsapp import invia_proposta_gruppo, invia_annullamento_gruppo, invia_gruppo_confermato
+from app.services.whatsapp import (
+    invia_proposta_gruppo, invia_annullamento_gruppo, invia_gruppo_confermato, invia_notifica_operatore,
+)
 
 
 def slot_a_orario(slot_inizio: int) -> str:
@@ -23,7 +26,7 @@ def notifica_proposta_gruppo(gruppo, membri, circolo):
     nomi = ", ".join(f"{m.utente.nome} {m.utente.cognome} ({m.lato_assegnato})" for m in membri)
 
     testo = (
-        f"ߎ Ho trovato dei compagni per te!\n"
+        f"🎾 Ho trovato dei compagni per te!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Giocatori: {nomi}\n\n"
@@ -57,3 +60,13 @@ def notifica_gruppo_confermato(membri, gruppo, circolo):
             membro.utente.whatsapp_numero, testo,
             circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
         )
+
+    nomi_giocatori = ", ".join(f"{m.utente.nome} {m.utente.cognome}" for m in membri)
+    testo_operatore = (
+        f"🔔 Nuovo gruppo pronto per la prenotazione!\n"
+        f"Circolo: {circolo.nome}\n"
+        f"Giorno: {gruppo.giorno} alle {orario}\n"
+        f"Giocatori: {nomi_giocatori}\n"
+        f"Vai al pannello per confermare: {config.BACKEND_PUBLIC_URL}/admin"
+    )
+    invia_notifica_operatore(testo_operatore, circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario, giocatori=nomi_giocatori)
