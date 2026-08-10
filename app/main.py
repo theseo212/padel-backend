@@ -1204,3 +1204,99 @@ def lista_messaggi_contatto(db: Session = Depends(get_db)):
         }
         for m in messaggi
     ]
+
+
+def _conta_persone_compatibili(db: Session, richiesta: models.Richiesta) -> int:
+    """
+    Conta quante ALTRE richieste attive (IN_RICERCA) sono potenzialmente
+    compatibili con questa: stesso giorno, stesso tipo partita, almeno un
+    circolo in comune, fascia oraria che si sovrappone, livello entro la
+    tolleranza attuale di una delle due.
+
+    Attenzione: "compatibile con questa richiesta" NON significa che si
+    formerà per forza un gruppo - servirebbe che tutte e 4 le persone
+    fossero compatibili anche TRA loro (non solo con questa), e che i lati
+    DX/SX si distribuiscano correttamente. È quindi un indicatore di
+    quanta "gente in giro" c'è con caratteristiche simili, onesto ma non
+    una promessa di match garantito - per questo lo chiamiamo "persone
+    potenzialmente compatibili", non "persone con cui giocherai".
+    """
+    altre_richieste = (
+        db.query(models.Richiesta)
+        .options(joinedload(models.Richiesta.utente), joinedload(models.Richiesta.circoli))
+        .filter(
+            models.Richiesta.id != richiesta.id,
+            models.Richiesta.utente_id != richiesta.utente_id,
+            models.Richiesta.stato == "IN_RICERCA",
+            models.Richiesta.giorno == richiesta.giorno,
+            models.Richiesta.tipo_partita == richiesta.tipo_partita,
+        )
+        .all()
+    )
+
+    circoli_richiesta = set(c.id for c in richiesta.circoli)
+    conteggio = 0
+    for altra in altre_richieste:
+        if not (altra.disponibilita_bitmask & richiesta.disponibilita_bitmask):
+            continue
+        if not (set(c.id for c in altra.circoli) & circoli_richiesta):
+            continue
+        tolleranza_effettiva = max(float(richiesta.tolleranza_corrente), float(altra.tolleranza_corrente))
+        if abs(float(altra.utente.livello_playtomic) - float(richiesta.utente.livello_playtomic)) > tolleranza_effettiva:
+            continue
+        conteggio += 1
+
+    return conteggio
+
+
+def _probabilita_da_conteggio(conteggio: int) -> str:
+    """Traduce il numero di persone compatibili in un'etichetta comprensibile."""
+    if conteggio >= 13:
+        return "Ottime"
+    if conteggio >= 8:
+        return "Molto buone"
+    if conteggio >= 5:
+        return "Buone"
+    if conteggio >= 3:
+        return "Sufficienti"
+    return "Scarse"
+
+
+@app.get("/stato-richieste/{numero_whatsapp}")
+def stato_richieste_utente(numero_whatsapp: str, db: Session = Depends(get_db)):
+    """
+    Pagina di stato pubblica per un utente: mostra le sue richieste ancora
+    IN_RICERCA (non ancora abbinate), con un'indicazione onesta di quanta
+    "gente compatibile" c'è in giro in questo momento. Raggiungibile dal
+    link nel messaggio WhatsApp di riepilogo, usando il numero come
+    identificativo (nessuna password: il link stesso, ricevuto privatamente
+    su WhatsApp, fa da chiave d'accesso).
+    """
+    utente = db.query(models.Utente).filter(models.Utente.whatsapp_numero == numero_whatsapp).first()
+    if utente is None:
+        raise HTTPException(status_code=404, detail="Nessun utente trovato con questo numero")
+
+    richieste = (
+        db.query(models.Richiesta)
+        .options(joinedload(models.Richiesta.circoli))
+        .filter(
+            models.Richiesta.utente_id == utente.id,
+            models.Richiesta.stato == "IN_RICERCA",
+        )
+        .order_by(models.Richiesta.giorno)
+        .all()
+    )
+
+    risultato = []
+    for r in richieste:
+        conteggio = _conta_persone_compatibili(db, r)
+        risultato.append({
+            "id": r.id,
+            "giorno": str(r.giorno),
+            "fasce_orarie": ", ".join(bitmask_a_fasce_leggibili(r.disponibilita_bitmask)),
+            "tipo_partita": r.tipo_partita,
+            "persone_compatibili": conteggio,
+            "probabilita": _probabilita_da_conteggio(conteggio),
+        })
+
+    return {"nome": utente.nome, "richieste": risultato}
