@@ -96,14 +96,17 @@ def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str) -> bool:
 
 
 def invia_riepilogo_richiesta(numero_whatsapp: str, riepilogo: str, nome: str = "", tipo_partita: str = "",
-                                giorno: str = "", orari: str = "", livello: str = "", lato: str = "", circoli: str = "") -> bool:
+                                giorno: str = "", orari: str = "", livello: str = "", lato: str = "",
+                                circoli: str = "", link_stato: str = "") -> bool:
     """
     'riepilogo' resta il testo già formattato (usato per la simulazione),
     gli altri parametri sono i pezzi separati necessari al template reale.
+    link_stato è l'indirizzo della pagina dove l'utente può controllare da
+    solo lo stato delle sue richieste, senza doverci scrivere.
     """
     variabili = {
         "1": nome, "2": tipo_partita, "3": giorno, "4": orari,
-        "5": livello, "6": lato, "7": circoli,
+        "5": livello, "6": lato, "7": circoli, "8": link_stato,
     } if nome else None
     return _invia(numero_whatsapp, riepilogo, TEMPLATE_RIEPILOGO, variabili)
 
