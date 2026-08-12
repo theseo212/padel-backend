@@ -3,7 +3,7 @@ Questo è il file principale dell'applicazione: qui nasce il server web.
 Per ora contiene solo un endpoint di verifica ("health check"), utile
 per controllare che il server sia acceso e collegato al database.
 
-Nei prossimi passi aggiungeremo qui gli endpoint veri (es. per inserire
+Nei prosssimi passi aggiungeremo qui gli endpoint veri (es. per inserire
 una richiesta dal form web).
 """
 
