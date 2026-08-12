@@ -1312,3 +1312,166 @@ def stato_richieste_utente(numero_whatsapp: str, db: Session = Depends(get_db)):
         })
 
     return {"nome": utente.nome, "richieste": risultato}
+
+
+# === PANNELLO DATABASE (tipo "phpMyAdmin" semplificato) ===
+# Un sistema GENERICO (non 11 endpoint separati da mantenere): legge le
+# colonne di qualsiasi tabella direttamente dai modelli SQLAlchemy, così
+# funziona automaticamente anche per tabelle future, senza dover
+# aggiornare questo file ogni volta che cambia qualcosa.
+#
+# ATTENZIONE: è uno strumento potente e diretto sul database reale - va
+# usato con cautela (l'interfaccia lo ricorda chiaramente all'operatore).
+
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.exc import IntegrityError
+from datetime import date as _date_type, time as _time_type
+import decimal as _decimal_modulo
+
+TABELLE_DB = {
+    "utenti": models.Utente,
+    "circoli": models.Circolo,
+    "richieste": models.Richiesta,
+    "richieste_circoli": models.RichiestaCircolo,
+    "gruppi": models.Gruppo,
+    "gruppi_membri": models.GruppoMembro,
+    "partite": models.Partita,
+    "feedback_livello": models.FeedbackLivello,
+    "storico_livello": models.StoricoLivello,
+    "conversione_wansport_playtomic": models.ConversioneWansportPlaytomic,
+    "messaggi_contatto": models.MessaggioContatto,
+}
+
+
+def _chiavi_primarie_tabella(modello) -> list[str]:
+    return [colonna.name for colonna in sa_inspect(modello).primary_key]
+
+
+def _riga_a_dict_generico(riga) -> dict:
+    """Converte una riga qualsiasi in un dizionario semplice, pronto per il JSON."""
+    risultato = {}
+    for colonna in riga.__table__.columns:
+        valore = getattr(riga, colonna.name)
+        if valore is not None and not isinstance(valore, (str, int, float, bool)):
+            valore = str(valore)  # date, orari, importi, ecc. -> testo leggibile
+        risultato[colonna.name] = valore
+    return risultato
+
+
+def _converti_valore_per_colonna(colonna, valore_testo: str):
+    """Converte il testo ricevuto dal form nel tipo Python giusto per quella colonna."""
+    if valore_testo == "" or valore_testo is None:
+        return None
+    tipo = colonna.type.python_type
+    if tipo is bool:
+        return valore_testo.strip().lower() in ("true", "1", "si", "sì", "t", "yes")
+    if tipo is int:
+        return int(valore_testo)
+    if tipo is float:
+        return float(valore_testo)
+    if tipo is _decimal_modulo.Decimal:
+        return _decimal_modulo.Decimal(valore_testo)
+    if tipo is _date_type:
+        return _date_type.fromisoformat(valore_testo)
+    if tipo is datetime:
+        return datetime.fromisoformat(valore_testo)
+    if tipo is _time_type:
+        return _time_type.fromisoformat(valore_testo)
+    return valore_testo
+
+
+@app.get("/admin/db/tabelle", dependencies=[Depends(verifica_credenziali_admin)])
+def lista_tabelle_db():
+    """Elenco dei nomi di tutte le tabelle gestibili da questo pannello."""
+    return sorted(TABELLE_DB.keys())
+
+
+@app.get("/admin/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin)])
+def leggi_tabella_db(nome_tabella: str, db: Session = Depends(get_db)):
+    """Restituisce tutte le righe di una tabella, con nomi colonne e chiavi primarie."""
+    modello = TABELLE_DB.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    righe = db.query(modello).all()
+    return {
+        "colonne": [c.name for c in modello.__table__.columns],
+        "chiavi_primarie": _chiavi_primarie_tabella(modello),
+        "righe": [_riga_a_dict_generico(r) for r in righe],
+    }
+
+
+@app.put("/admin/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin)])
+def modifica_riga_db(nome_tabella: str, dati: dict, db: Session = Depends(get_db)):
+    """
+    Modifica una riga. 'dati' contiene tutti i campi della riga (nuovi
+    valori) più '_chiavi_originali' per identificare QUALE riga modificare
+    (necessario per le tabelle con chiave primaria composta, es.
+    richieste_circoli, dove non basta un singolo 'id').
+    """
+    modello = TABELLE_DB.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    chiavi_primarie = _chiavi_primarie_tabella(modello)
+    chiavi_originali = dati.pop("_chiavi_originali", {})
+
+    query = db.query(modello)
+    for chiave in chiavi_primarie:
+        query = query.filter(getattr(modello, chiave) == chiavi_originali.get(chiave))
+    riga = query.first()
+    if riga is None:
+        raise HTTPException(status_code=404, detail="Riga non trovata")
+
+    colonne_per_nome = {c.name: c for c in modello.__table__.columns}
+    for nome_campo, valore in dati.items():
+        if nome_campo not in colonne_per_nome:
+            continue
+        try:
+            setattr(riga, nome_campo, _converti_valore_per_colonna(colonne_per_nome[nome_campo], valore))
+        except (ValueError, TypeError) as errore:
+            raise HTTPException(status_code=400, detail=f"Valore non valido per '{nome_campo}': {errore}")
+
+    try:
+        db.commit()
+    except IntegrityError as errore:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"Modifica non consentita dal database: {errore.orig}")
+
+    return {"messaggio": "Riga modificata con successo."}
+
+
+@app.delete("/admin/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin)])
+def elimina_riga_db(nome_tabella: str, chiavi: dict, db: Session = Depends(get_db)):
+    """Elimina una riga, identificata dalle sue chiavi primarie (una o più colonne)."""
+    modello = TABELLE_DB.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    chiavi_primarie = _chiavi_primarie_tabella(modello)
+    query = db.query(modello)
+    for chiave in chiavi_primarie:
+        query = query.filter(getattr(modello, chiave) == chiavi.get(chiave))
+    riga = query.first()
+    if riga is None:
+        raise HTTPException(status_code=404, detail="Riga non trovata")
+
+    try:
+        db.delete(riga)
+        db.commit()
+    except IntegrityError as errore:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Impossibile eliminare: questa riga è collegata ad altri dati ({errore.orig})"
+        )
+
+    return {"messaggio": "Riga eliminata con successo."}
+
+
+@app.get("/admin/database", dependencies=[Depends(verifica_credenziali_admin)])
+def pagina_admin_database():
+    """Serve la pagina web del pannello database."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_database.html")
+    return FileResponse(percorso)
