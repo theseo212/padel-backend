@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Database — Pannello AnnaPadel</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin-top: 24px; color: #333; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    .avviso {
+        background: #fff7e6;
+        border: 1px solid #f3d98b;
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-size: 13px;
+        color: #7a5c00;
+        margin-bottom: 20px;
+    }
+    nav.menu-admin {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0 20px;
+        flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none;
+        color: #444;
+        background: white;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
+
+    .selettore-tabelle {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+    }
+    .btn-tabella {
+        border: none;
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        font-weight: 500;
+        background: white;
+        color: #444;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .btn-tabella.attivo { background: #1B3A63; color: white; }
+
+    .contenitore-scroll { overflow-x: auto; }
+    table {
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-top: 8px;
+        min-width: 100%;
+    }
+    th, td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid #eee;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+    th { background: #fafafa; color: #555; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    .vuoto { color: #999; font-style: italic; padding: 14px; }
+
+    input[type="text"] {
+        width: 100px;
+        padding: 4px 6px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    button {
+        border: none;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        margin-right: 4px;
+        font-weight: 500;
+    }
+    .btn-blu { background: #dbeafe; color: #1d4ed8; }
+    .btn-verde { background: #d5f2df; color: #1a7a3a; }
+    .btn-rosso { background: #fbdcdc; color: #a3231f; }
+    .btn-secondario { background: #f0f2f5; color: #333; }
+</style>
+</head>
+<body>
+
+<h1>🎾 Pannello Operatore</h1>
+<p class="sottotitolo">Gestione prenotazioni campi e partite giocate — AnnaPadel</p>
+
+<nav class="menu-admin">
+    <a href="/admin">Gruppi in attesa</a>
+    <a href="/admin/contatti">Messaggi dal form</a>
+    <a href="/admin/circoli">Gestione Circoli</a>
+    <a href="/admin/report">Report Partite</a>
+    <a href="/admin/database" class="attivo">Database</a>
+</nav>
+
+<h2>Consultazione e modifica diretta del database</h2>
+<div class="avviso">
+    ⚠️ <strong>Attenzione:</strong> questo pannello modifica e cancella dati direttamente nel database reale,
+    senza controlli aggiuntivi. Le modifiche/cancellazioni sono immediate e non reversibili. Usa con cautela.
+</div>
+
+<div id="selettore-tabelle" class="selettore-tabelle"></div>
+<div id="contatore-righe" class="sottotitolo"></div>
+<div class="contenitore-scroll">
+    <div id="contenitore-tabella-db"></div>
+</div>
+
+<script>
+let tabellaAttuale = null;
+
+async function caricaElencoTabelle() {
+    try {
+        const risposta = await fetch('/admin/db/tabelle');
+        const tabelle = await risposta.json();
+        const contenitore = document.getElementById('selettore-tabelle');
+        contenitore.innerHTML = tabelle.map(t =>
+            `<button class="btn-tabella" onclick="selezionaTabella('${t}')" id="btn-${t}">${t}</button>`
+        ).join('');
+        if (tabelle.length > 0) {
+            selezionaTabella(tabelle[0]);
+        }
+    } catch (e) {
+        console.error('Errore caricaElencoTabelle:', e);
+        document.getElementById('selettore-tabelle').innerHTML =
+            `<p class="vuoto">Errore nel caricare l'elenco tabelle: ${e.message}</p>`;
+    }
+}
+
+async function selezionaTabella(nome) {
+    tabellaAttuale = nome;
+    document.querySelectorAll('.btn-tabella').forEach(b => b.classList.remove('attivo'));
+    const bottone = document.getElementById('btn-' + nome);
+    if (bottone) bottone.classList.add('attivo');
+    await caricaRighe();
+}
+
+async function caricaRighe() {
+    const contenitore = document.getElementById('contenitore-tabella-db');
+    contenitore.innerHTML = '<p class="vuoto">Caricamento…</p>';
+    try {
+        const risposta = await fetch(`/admin/db/tabelle/${tabellaAttuale}`);
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const dati = await risposta.json();
+        window._colonneCorrenti = dati.colonne;
+        window._chiaviPrimarieCorrenti = dati.chiavi_primarie;
+        window._righeCorrenti = dati.righe;
+        renderizzaTabella();
+    } catch (e) {
+        console.error('Errore caricaRighe:', e);
+        contenitore.innerHTML = `<p class="vuoto">Errore nel caricare la tabella: ${e.message}</p>`;
+    }
+}
+
+function renderizzaTabella() {
+    const colonne = window._colonneCorrenti;
+    const righe = window._righeCorrenti;
+    document.getElementById('contatore-righe').textContent = `${righe.length} righe`;
+
+    if (righe.length === 0) {
+        document.getElementById('contenitore-tabella-db').innerHTML = '<p class="vuoto">Nessuna riga in questa tabella.</p>';
+        return;
+    }
+
+    let html = '<table><tr>';
+    colonne.forEach(c => html += `<th>${c}</th>`);
+    html += '<th>Azioni</th></tr>';
+
+    righe.forEach((riga, indice) => {
+        html += `<tr id="riga-${indice}">`;
+        colonne.forEach(c => {
+            const valore = riga[c] === null || riga[c] === undefined ? '' : riga[c];
+            html += `<td><span class="valore-cella">${valore}</span></td>`;
+        });
+        html += `<td>
+            <button class="btn-blu" onclick="modificaRiga(${indice})">Modifica</button>
+            <button class="btn-rosso" onclick="eliminaRiga(${indice})">Elimina</button>
+        </td></tr>`;
+    });
+    html += '</table>';
+    document.getElementById('contenitore-tabella-db').innerHTML = html;
+}
+
+function modificaRiga(indice) {
+    const riga = document.getElementById('riga-' + indice);
+    const dati = window._righeCorrenti[indice];
+    const colonne = window._colonneCorrenti;
+    let html = '';
+    colonne.forEach(c => {
+        const valore = dati[c] === null || dati[c] === undefined ? '' : dati[c];
+        const valoreEscaped = String(valore).replace(/"/g, '&quot;');
+        html += `<td><input type="text" id="input-${indice}-${c}" value="${valoreEscaped}"></td>`;
+    });
+    html += `<td>
+        <button class="btn-verde" onclick="salvaRiga(${indice})">Salva</button>
+        <button class="btn-secondario" onclick="renderizzaTabella()">Annulla</button>
+    </td>`;
+    riga.innerHTML = html;
+}
+
+async function salvaRiga(indice) {
+    const dati = window._righeCorrenti[indice];
+    const colonne = window._colonneCorrenti;
+    const chiaviPrimarie = window._chiaviPrimarieCorrenti;
+
+    const corpo = { _chiavi_originali: {} };
+    chiaviPrimarie.forEach(k => corpo._chiavi_originali[k] = dati[k]);
+    colonne.forEach(c => {
+        corpo[c] = document.getElementById(`input-${indice}-${c}`).value;
+    });
+
+    try {
+        const risposta = await fetch(`/admin/db/tabelle/${tabellaAttuale}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
+        if (risposta.ok) {
+            caricaRighe();
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            alert('Errore: ' + (errore.detail || 'operazione non riuscita'));
+        }
+    } catch (e) {
+        alert('Impossibile contattare il server: ' + e.message);
+    }
+}
+
+async function eliminaRiga(indice) {
+    if (!confirm('Eliminare definitivamente questa riga? Operazione non reversibile.')) return;
+    const dati = window._righeCorrenti[indice];
+    const chiaviPrimarie = window._chiaviPrimarieCorrenti;
+    const chiavi = {};
+    chiaviPrimarie.forEach(k => chiavi[k] = dati[k]);
+
+    try {
+        const risposta = await fetch(`/admin/db/tabelle/${tabellaAttuale}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(chiavi),
+        });
+        if (risposta.ok) {
+            caricaRighe();
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            alert('Errore: ' + (errore.detail || 'impossibile eliminare'));
+        }
+    } catch (e) {
+        alert('Impossibile contattare il server: ' + e.message);
+    }
+}
+
+caricaElencoTabelle();
+</script>
+
+</body>
+</html>
