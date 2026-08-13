@@ -159,8 +159,8 @@ def invia_prenotazione_fallita(numero_whatsapp: str, testo: str, circolo: str = 
     _invia(numero_whatsapp, testo, TEMPLATE_PRENOTAZIONE_FALLITA, variabili)
 
 
-def invia_richiesta_feedback(numero_whatsapp: str, testo: str, nome_compagno: str = ""):
-    variabili = {"1": nome_compagno} if nome_compagno else None
+def invia_richiesta_feedback(numero_whatsapp: str, testo: str, nome_compagno: str = "", riferimento_partita: str = ""):
+    variabili = {"1": nome_compagno, "2": riferimento_partita} if nome_compagno else None
     _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_FEEDBACK, variabili,
            etichetta_simulazione=" - RICHIESTA FEEDBACK")
 
