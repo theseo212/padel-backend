@@ -512,7 +512,6 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
         lato_leggibile = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}.get(
             utente.lato_preferito, utente.lato_preferito
         )
-        link_stato = f"{config.PUBLIC_FORM_URL}/stato/{utente.whatsapp_numero}"
         riepilogo = (
             f"Ciao {utente.nome}, ho registrato la tua richiesta!\n"
             f"{dati.tipo_partita} - {dati.giorno}\n"
@@ -523,14 +522,13 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
             f"Io non ti disturberò più con altri messaggi finché non avrò formato la partita giusta per te. "
             f"Quando sarà pronta ti manderò un messaggio per avere la tua conferma e poter prenotare il campo.\n"
             f"Attenzione: avrai solo 15 minuti per dare questa tua conferma!!\n"
-            f"Se nel frattempo vuoi vedere il riassunto e lo stato delle tue richieste, clicca qui: {link_stato}"
+            f"Se nel frattempo vuoi vedere il riassunto e lo stato delle tue richieste, usa il pulsante qui sotto."
         )
         riepilogo_inviato_davvero = invia_riepilogo_richiesta(
             utente.whatsapp_numero, riepilogo,
             nome=utente.nome, tipo_partita=dati.tipo_partita, giorno=str(dati.giorno),
             orari=fasce_leggibili, livello=str(utente.livello_playtomic),
             lato=lato_leggibile, circoli=', '.join(c.nome for c in circoli),
-            link_stato=link_stato,
         )
         # Qui la richiesta è comunque valida e verrà comunque cercata dal
         # matching, quindi NON la annulliamo se manca solo la conferma
@@ -592,7 +590,6 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
         lato_leggibile = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}.get(
             utente.lato_preferito, utente.lato_preferito
         )
-        link_stato = f"{config.PUBLIC_FORM_URL}/stato/{utente.whatsapp_numero}"
         riepilogo = (
             f"Perfetto {utente.nome}, numero verificato! Ecco il riepilogo della tua richiesta:\n"
             f"{ultima_richiesta.tipo_partita} - {ultima_richiesta.giorno}\n"
@@ -603,14 +600,13 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
             f"Io non ti disturberò più con altri messaggi finché non avrò formato la partita giusta per te. "
             f"Quando sarà pronta ti manderò un messaggio per avere la tua conferma e poter prenotare il campo.\n"
             f"Attenzione: avrai solo 15 minuti per dare questa tua conferma!!\n"
-            f"Se nel frattempo vuoi vedere il riassunto e lo stato delle tue richieste, clicca qui: {link_stato}"
+            f"Se nel frattempo vuoi vedere il riassunto e lo stato delle tue richieste, usa il pulsante qui sotto."
         )
         invia_riepilogo_richiesta(
             utente.whatsapp_numero, riepilogo,
             nome=utente.nome, tipo_partita=ultima_richiesta.tipo_partita, giorno=str(ultima_richiesta.giorno),
             orari=fasce_leggibili, livello=str(utente.livello_playtomic),
             lato=lato_leggibile, circoli=', '.join(c.nome for c in ultima_richiesta.circoli),
-            link_stato=link_stato,
         )
 
     return {"messaggio": "Numero verificato con successo."}
