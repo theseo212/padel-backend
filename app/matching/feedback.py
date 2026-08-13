@@ -11,7 +11,7 @@ from collections import Counter
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, config
-from app.services.whatsapp import invia_richiesta_feedback, invia_promemoria_feedback
+from app.services.whatsapp import invia_richiesta_feedback
 
 
 def _prossimo_compagno_da_valutare(db: Session, partita_id: int, votante_id: int):
@@ -357,9 +357,6 @@ def controlla_cicli_feedback(db: Session):
                 .filter(models.Gruppo.id == partita.gruppo_id)
                 .first()
             )
-            circolo = db.query(models.Circolo).filter(models.Circolo.id == partita.circolo_id).first()
-            nome_circolo = circolo.nome if circolo else "circolo"
-            riferimento_partita = f"{nome_circolo} del {partita.giorno}"
             for membro in gruppo.membri:
                 voti_dati = (
                     db.query(models.FeedbackLivello)
@@ -370,7 +367,13 @@ def controlla_cicli_feedback(db: Session):
                     .count()
                 )
                 if voti_dati < 3:  # non ha ancora votato tutti e 3 i compagni
-                    invia_promemoria_feedback(membro.utente.whatsapp_numero, riferimento_partita=riferimento_partita)
+                    # Riusiamo lo stesso template già approvato della prima
+                    # domanda (con i bottoni Più alto/Giusto/Più basso),
+                    # invece di un secondo template generico "promemoria":
+                    # più utile per l'utente (bottoni diretti, non solo un
+                    # testo) e non richiede una seconda approvazione Meta
+                    # (che continuava a classificarlo come Marketing).
+                    invia_prossima_domanda_feedback(db, partita.id, membro.utente_id)
             partita.promemoria_feedback_inviato = True
             db.commit()
 
