@@ -165,22 +165,28 @@ def invia_richiesta_feedback(numero_whatsapp: str, testo: str, nome_compagno: st
            etichetta_simulazione=" - RICHIESTA FEEDBACK")
 
 
-def invia_promemoria_feedback(numero_whatsapp: str):
-    testo = "Psst! Non dimenticare di valutare i tuoi compagni dell'ultima partita 😊" + FIRMA_MESSAGGIO
-    _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_FEEDBACK, {})
+def invia_promemoria_feedback(numero_whatsapp: str, riferimento_partita: str = ""):
+    """
+    Cita esplicitamente circolo e data della partita (stesso principio già
+    validato per annapadel_richiesta_feedback): Meta approva come
+    "Utility" solo i sondaggi legati a un'interazione specifica.
+    """
+    testo = f"Psst! Non dimenticare di valutare i tuoi compagni della partita al {riferimento_partita} 😊" + FIRMA_MESSAGGIO
+    variabili = {"1": riferimento_partita} if riferimento_partita else {}
+    _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_FEEDBACK, variabili)
 
 
-def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str = "", id_richiesta: str = "") -> bool:
+def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str = "", giorno: str = "",
+                                       fascia_oraria: str = "", id_richiesta: str = "") -> bool:
     """
-    Il link di annullamento NON può più essere una variabile di testo
-    libero (Meta rifiuta i template con un link intero dentro una
-    variabile, lo scambia per phishing) - ora è un bottone "Call to
-    Action" con URL dinamico, dove SOLO l'ID della richiesta è variabile
-    (aggiunto in fondo a un indirizzo fisso). Il link "nuova richiesta"
-    invece è sempre lo stesso (l'indirizzo del form), quindi è diventato
-    un bottone fisso, senza bisogno di nessuna variabile.
+    Il link di annullamento è un bottone "Call to Action" con URL dinamico
+    (non più una variabile di testo libero - Meta la rifiuta, la scambia
+    per phishing): la parte variabile è solo l'ID della richiesta.
+    Il messaggio cita esplicitamente giorno e fascia oraria richiesti:
+    Meta approva come "Utility" solo i messaggi che fanno riferimento a
+    un'interazione SPECIFICA, non un avviso generico.
     """
-    variabili = {"1": nome, "2": id_richiesta} if nome else None
+    variabili = {"1": nome, "2": giorno, "3": fascia_oraria, "4": id_richiesta} if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_MANCATA_PARTITA, variabili,
                   etichetta_simulazione=" - PROMEMORIA")
 
