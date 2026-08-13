@@ -87,11 +87,17 @@ def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, v
 
 
 def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str) -> bool:
+    # Il template Authentication ha il testo FISSO deciso da Meta (non
+    # modificabile) - qui costruiamo solo il testo di riserva per la
+    # simulazione locale, che resta con la voce di Anna. La chiamata vera
+    # a Twilio manda invece UNA SOLA variabile (il codice): i minuti di
+    # validità sono stati impostati una volta per sempre in fase di
+    # creazione del template su Twilio, non si mandano più ad ogni invio.
     testo = (
-        f"Ciao! Sono Anna 👋 Il tuo codice di verifica per {NOME_BRAND} è {codice_otp}, "
-        f"valido {OTP_DURATA_VALIDITA_MINUTI} minuti."
+        f"Ciao! Sono Anna 👋 Per completare la tua richiesta su {NOME_BRAND}, "
+        f"usa questo codice: {codice_otp} (valido {OTP_DURATA_VALIDITA_MINUTI} minuti)."
     ) + FIRMA_MESSAGGIO
-    variabili = {"1": codice_otp, "2": str(OTP_DURATA_VALIDITA_MINUTI)}
+    variabili = {"1": codice_otp}
     return _invia(numero_whatsapp, testo, TEMPLATE_OTP, variabili)
 
 
