@@ -59,15 +59,30 @@ def invia_prossima_domanda_feedback(db: Session, partita_id: int, votante_utente
     (un compagno alla volta, con 3 bottoni - punto sollevato dall'utente:
     più affidabile che chiedere di scrivere a mano tutte le valutazioni
     in un unico messaggio).
+
+    Il messaggio cita esplicitamente circolo e data della partita: Meta
+    approva come "Utility" solo i sondaggi di feedback che fanno
+    riferimento a un'interazione SPECIFICA (non un sondaggio generico) -
+    vedi le loro linee guida su "Utility feedback surveys".
     """
     compagno = _prossimo_compagno_da_valutare(db, partita_id, votante_utente_id)
     if compagno is None:
         return  # ha già finito di valutare tutti, nessun'altra domanda da mandare
 
     votante = db.query(models.Utente).filter(models.Utente.id == votante_utente_id).first()
+    partita = db.query(models.Partita).filter(models.Partita.id == partita_id).first()
+    circolo = db.query(models.Circolo).filter(models.Circolo.id == partita.circolo_id).first() if partita else None
+
     nome_compagno = f"{compagno.utente.nome} {compagno.utente.cognome}"
-    testo = f"Come valuti il livello di {nome_compagno}?"
-    invia_richiesta_feedback(votante.whatsapp_numero, testo, nome_compagno=nome_compagno)
+    nome_circolo = circolo.nome if circolo else "circolo"
+    data_partita = str(partita.giorno) if partita else ""
+    riferimento_partita = f"{nome_circolo} del {data_partita}"
+
+    testo = f"La tua partita al {riferimento_partita} è finita! Come valuti il livello di {nome_compagno}?"
+    invia_richiesta_feedback(
+        votante.whatsapp_numero, testo,
+        nome_compagno=nome_compagno, riferimento_partita=riferimento_partita,
+    )
 
 
 def rispondi_feedback_da_whatsapp(db: Session, numero_whatsapp: str, testo_risposta: str):
