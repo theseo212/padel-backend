@@ -115,7 +115,7 @@ def invia_riepilogo_richiesta(numero_whatsapp: str, riepilogo: str, nome: str = 
     """
     variabili = {
         "1": nome, "2": tipo_partita, "3": giorno, "4": orari,
-        "5": livello, "6": lato, "7": circoli, "8": numero_whatsapp,
+        "5": livello, "6": lato, "7": circoli, "8": numero_whatsapp.lstrip("+"),
     } if nome else None
     return _invia(numero_whatsapp, riepilogo, TEMPLATE_RIEPILOGO, variabili)
 
