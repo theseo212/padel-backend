@@ -97,16 +97,19 @@ def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str) -> bool:
 
 def invia_riepilogo_richiesta(numero_whatsapp: str, riepilogo: str, nome: str = "", tipo_partita: str = "",
                                 giorno: str = "", orari: str = "", livello: str = "", lato: str = "",
-                                circoli: str = "", link_stato: str = "") -> bool:
+                                circoli: str = "") -> bool:
     """
     'riepilogo' resta il testo già formattato (usato per la simulazione),
     gli altri parametri sono i pezzi separati necessari al template reale.
-    link_stato è l'indirizzo della pagina dove l'utente può controllare da
-    solo lo stato delle sue richieste, senza doverci scrivere.
+    L'ottava variabile del template è ora un bottone "Call to Action" con
+    URL dinamico (non più un link intero come variabile di testo - Meta lo
+    rifiuta, lo scambia per phishing): la parte variabile è solo il numero
+    di telefono, aggiunto in fondo a un indirizzo fisso
+    (https://annapadel.it/stato/NUMERO).
     """
     variabili = {
         "1": nome, "2": tipo_partita, "3": giorno, "4": orari,
-        "5": livello, "6": lato, "7": circoli, "8": link_stato,
+        "5": livello, "6": lato, "7": circoli, "8": numero_whatsapp,
     } if nome else None
     return _invia(numero_whatsapp, riepilogo, TEMPLATE_RIEPILOGO, variabili)
 
