@@ -64,7 +64,7 @@ def bitmask_a_fasce_leggibili(bitmask: int) -> list[str]:
     Esempio: bitmask con slot 22,23,24 accesi -> ["18:00-19:30"]
     """
     orari = []
-    for i in range(NUM_SLOT_TOTALI):
+    for i in range(NUM_SLOT_TOTALI + 1):  # +1: serve anche il confine finale dell'ultimo slot
         minuti_totali = ORA_INIZIO_GIORNATA * 60 + i * DURATA_SLOT_MINUTI
         ore, minuti = divmod(minuti_totali, 60)
         orari.append(f"{ore:02d}:{minuti:02d}")
