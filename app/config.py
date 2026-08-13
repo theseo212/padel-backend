@@ -14,7 +14,7 @@ NOME_BRAND = "AnnaPadel"
 FIRMA_MESSAGGIO = "\n\n♥ La tua Anna"
 
 # === INDIRIZZO PUBBLICO DEL FORM (usato nei link dei messaggi WhatsApp) ===
-PUBLIC_FORM_URL = os.getenv("PUBLIC_FORM_URL", "https://padel-frontend-production-913f.up.railway.app")
+PUBLIC_FORM_URL = os.getenv("PUBLIC_FORM_URL", "https://www.annapadel.it")
 
 # === INDIRIZZO PUBBLICO DI QUESTO BACKEND (per i link "clicca per annullare") ===
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "https://web02-production-7527.up.railway.app")
