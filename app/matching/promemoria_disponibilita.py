@@ -78,21 +78,16 @@ def controlla_promemoria_mancata_partita(db: Session, adesso: datetime | None = 
 
         # È il momento giusto per avvisare
         if adesso >= soglia_avviso:
-            link_annulla = f"{config.BACKEND_PUBLIC_URL.rstrip('/')}/richieste/{richiesta.id}/annulla-da-link"
-            link_nuova_richiesta = config.PUBLIC_FORM_URL
-
             testo = (
                 f"Ciao {richiesta.utente.nome}, sono Anna! Manca un'ora all'inizio della tua finestra "
                 f"di disponibilità a giocare oggi. Per il momento non sono ancora riuscita a organizzare "
                 f"una partita con le caratteristiche che mi hai chiesto, ma continuerò a cercare "
                 f"automaticamente.\n\n"
-                f"Se vuoi modificare la tua richiesta, cancellala qui: {link_annulla}\n"
-                f"poi inseriscine una nuova da qui: {link_nuova_richiesta}\n"
-                f"(ti riconoscerò subito, sarà velocissimo)"
+                f"Se vuoi, puoi annullare la richiesta o inserirne una nuova dai pulsanti qui sotto."
             )
             invia_promemoria_mancata_partita(
                 richiesta.utente.whatsapp_numero, testo,
-                nome=richiesta.utente.nome, link_annulla=link_annulla, link_nuova=link_nuova_richiesta,
+                nome=richiesta.utente.nome, id_richiesta=str(richiesta.id),
             )
             richiesta.promemoria_mancata_partita_inviato = True
             inviati += 1
