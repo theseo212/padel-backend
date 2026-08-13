@@ -3,7 +3,7 @@ Questo è il file principale dell'applicazione: qui nasce il server web.
 Per ora contiene solo un endpoint di verifica ("health check"), utile
 per controllare che il server sia acceso e collegato al database.
 
-Nei prosssimi passi aggiungeremo qui gli endpoint veri (es. per inserire
+Nei prossimi passi aggiungeremo qui gli endpoint veri (es. per inserire
 una richiesta dal form web).
 """
 
@@ -709,6 +709,18 @@ def annulla_richiesta_da_link(richiesta_id: int, db: Session = Depends(get_db)):
     </html>
     """
     return Response(content=html, media_type="text/html")
+
+
+@app.get("/annulla/{richiesta_id}")
+def annulla_richiesta_da_bottone_whatsapp(richiesta_id: int, db: Session = Depends(get_db)):
+    """
+    Stessa identica funzione di /richieste/{id}/annulla-da-link, ma con
+    un indirizzo più corto e con l'ID alla FINE dell'URL - necessario per
+    i bottoni "Call to Action" di WhatsApp, che permettono una parte
+    variabile solo se è l'ultimo pezzo del link (non è possibile avere
+    l'ID nel mezzo, come nell'altra rotta).
+    """
+    return annulla_richiesta_da_link(richiesta_id, db)
 
 
 @app.post("/matching/esegui-ora", dependencies=[Depends(verifica_credenziali_admin)])
