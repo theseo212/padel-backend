@@ -357,6 +357,9 @@ def controlla_cicli_feedback(db: Session):
                 .filter(models.Gruppo.id == partita.gruppo_id)
                 .first()
             )
+            circolo = db.query(models.Circolo).filter(models.Circolo.id == partita.circolo_id).first()
+            nome_circolo = circolo.nome if circolo else "circolo"
+            riferimento_partita = f"{nome_circolo} del {partita.giorno}"
             for membro in gruppo.membri:
                 voti_dati = (
                     db.query(models.FeedbackLivello)
@@ -367,7 +370,7 @@ def controlla_cicli_feedback(db: Session):
                     .count()
                 )
                 if voti_dati < 3:  # non ha ancora votato tutti e 3 i compagni
-                    invia_promemoria_feedback(membro.utente.whatsapp_numero)
+                    invia_promemoria_feedback(membro.utente.whatsapp_numero, riferimento_partita=riferimento_partita)
             partita.promemoria_feedback_inviato = True
             db.commit()
 
