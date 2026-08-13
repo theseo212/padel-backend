@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models, config
 from app.services.whatsapp import invia_promemoria_mancata_partita
+from app.services.bitmask import bitmask_a_fasce_leggibili
 
 
 def _primo_slot_disponibile(bitmask: int) -> int | None:
@@ -78,16 +79,18 @@ def controlla_promemoria_mancata_partita(db: Session, adesso: datetime | None = 
 
         # È il momento giusto per avvisare
         if adesso >= soglia_avviso:
+            fascia_leggibile = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask))
             testo = (
                 f"Ciao {richiesta.utente.nome}, sono Anna! Manca un'ora all'inizio della tua finestra "
-                f"di disponibilità a giocare oggi. Per il momento non sono ancora riuscita a organizzare "
+                f"di disponibilità per il {richiesta.giorno} ({fascia_leggibile}) e non ho ancora trovato "
                 f"una partita con le caratteristiche che mi hai chiesto, ma continuerò a cercare "
                 f"automaticamente.\n\n"
                 f"Se vuoi, puoi annullare la richiesta o inserirne una nuova dai pulsanti qui sotto."
             )
             invia_promemoria_mancata_partita(
                 richiesta.utente.whatsapp_numero, testo,
-                nome=richiesta.utente.nome, id_richiesta=str(richiesta.id),
+                nome=richiesta.utente.nome, giorno=str(richiesta.giorno),
+                fascia_oraria=fascia_leggibile, id_richiesta=str(richiesta.id),
             )
             richiesta.promemoria_mancata_partita_inviato = True
             inviati += 1
