@@ -161,10 +161,19 @@ def invia_promemoria_feedback(numero_whatsapp: str):
     _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_FEEDBACK, {})
 
 
-def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str = "", link_annulla: str = "", link_nuova: str = ""):
-    variabili = {"1": nome, "2": link_annulla, "3": link_nuova} if nome else None
-    _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_MANCATA_PARTITA, variabili,
-           etichetta_simulazione=" - PROMEMORIA")
+def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str = "", id_richiesta: str = "") -> bool:
+    """
+    Il link di annullamento NON può più essere una variabile di testo
+    libero (Meta rifiuta i template con un link intero dentro una
+    variabile, lo scambia per phishing) - ora è un bottone "Call to
+    Action" con URL dinamico, dove SOLO l'ID della richiesta è variabile
+    (aggiunto in fondo a un indirizzo fisso). Il link "nuova richiesta"
+    invece è sempre lo stesso (l'indirizzo del form), quindi è diventato
+    un bottone fisso, senza bisogno di nessuna variabile.
+    """
+    variabili = {"1": nome, "2": id_richiesta} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_MANCATA_PARTITA, variabili,
+                  etichetta_simulazione=" - PROMEMORIA")
 
 
 def invia_notifica_operatore(testo: str, circolo: str = "", giorno: str = "", orario: str = "", giocatori: str = ""):
