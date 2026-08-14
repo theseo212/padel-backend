@@ -776,7 +776,18 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
         from twilio.request_validator import RequestValidator
         validatore = RequestValidator(config.TWILIO_AUTH_TOKEN)
         firma = request.headers.get("X-Twilio-Signature", "")
-        valido = validatore.validate(str(request.url), dati, firma)
+
+        # Railway (come molti servizi simili) riceve le richieste in HTTPS
+        # dall'esterno, ma le inoltra internamente come HTTP - senza questa
+        # correzione, l'indirizzo usato per calcolare la firma non
+        # corrisponderebbe MAI a quello vero usato da Twilio per firmare,
+        # facendo fallire la verifica per ogni singola richiesta reale.
+        url_da_verificare = str(request.url)
+        proto_originale = request.headers.get("x-forwarded-proto")
+        if proto_originale and url_da_verificare.startswith("http://"):
+            url_da_verificare = url_da_verificare.replace("http://", f"{proto_originale}://", 1)
+
+        valido = validatore.validate(url_da_verificare, dati, firma)
         if not valido:
             raise HTTPException(status_code=403, detail="Firma Twilio non valida")
 
