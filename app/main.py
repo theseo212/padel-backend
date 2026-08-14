@@ -210,6 +210,15 @@ def inizializza_database_se_necessario():
         connessione.execute(text(
             "ALTER TABLE circoli ADD COLUMN IF NOT EXISTS costo_servizio NUMERIC(3,2)"
         ))
+        connessione.execute(text(
+            "ALTER TABLE gruppi ADD COLUMN IF NOT EXISTS codice_conferma_circolo VARCHAR(20)"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE gruppi ADD COLUMN IF NOT EXISTS data_richiesta_prenotazione TIMESTAMP"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE gruppi ADD COLUMN IF NOT EXISTS numero_campo VARCHAR(20)"
+        ))
         connessione.commit()
 
     db = SessionLocal()
@@ -707,6 +716,12 @@ def annulla_richiesta_da_link(richiesta_id: int, db: Session = Depends(get_db)):
     return Response(content=html, media_type="text/html")
 
 
+def _orario_leggibile_gruppo(slot_inizio: int) -> str:
+    minuti_totali = config.ORA_INIZIO_GIORNATA * 60 + slot_inizio * config.DURATA_SLOT_MINUTI
+    ore, minuti = divmod(minuti_totali, 60)
+    return f"{ore:02d}:{minuti:02d}"
+
+
 @app.get("/annulla/{richiesta_id}")
 def annulla_richiesta_da_bottone_whatsapp(richiesta_id: int, db: Session = Depends(get_db)):
     """
@@ -717,6 +732,150 @@ def annulla_richiesta_da_bottone_whatsapp(richiesta_id: int, db: Session = Depen
     l'ID nel mezzo, come nell'altra rotta).
     """
     return annulla_richiesta_da_link(richiesta_id, db)
+
+
+def _pagina_conferma_circolo_html(titolo: str, corpo: str) -> Response:
+    """Stile condiviso per tutte le schermate della pagina di conferma circolo."""
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="it">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{titolo}</title>
+        <style>
+            body {{ font-family: -apple-system, sans-serif; background: #f6f7f8;
+                    display: flex; align-items: center; justify-content: center;
+                    min-height: 100vh; margin: 0; padding: 20px; }}
+            .box {{ background: white; padding: 28px; border-radius: 12px;
+                     max-width: 420px; width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+            h1 {{ font-size: 19px; color: #1B3A63; margin: 0 0 6px; }}
+            p {{ color: #444; font-size: 14px; line-height: 1.5; }}
+            .dettaglio {{ margin: 4px 0; }}
+            label {{ display: block; font-size: 13px; font-weight: 600; margin: 16px 0 6px; color: #333; }}
+            input[type="text"] {{ width: 100%; padding: 10px 12px; border: 1px solid #d5d7db;
+                     border-radius: 8px; font-size: 15px; box-sizing: border-box; }}
+            button {{ width: 100%; padding: 13px; border: none; border-radius: 8px;
+                       font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 10px; }}
+            .btn-conferma {{ background: #7CB342; color: white; }}
+            .btn-fallita {{ background: #fbdcdc; color: #a3231f; }}
+            .esito {{ font-size: 16px; font-weight: 600; }}
+            .esito.ok {{ color: #1a7a3a; }}
+            .esito.errore {{ color: #a3231f; }}
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <h1>{titolo}</h1>
+            {corpo}
+        </div>
+    </body>
+    </html>
+    """
+    return Response(content=html, media_type="text/html")
+
+
+def _carica_gruppo_da_token(token: str, db: Session):
+    """
+    Divide il token nel suo id gruppo + codice, e verifica che il codice
+    corrisponda - è la nostra "chiave d'accesso" al posto di una password,
+    dato che questa pagina la usa anche il circolo, senza credenziali.
+    """
+    try:
+        gruppo_id_str, codice = token.rsplit("-", 1)
+        gruppo_id = int(gruppo_id_str)
+    except (ValueError, IndexError):
+        return None, None
+
+    gruppo = (
+        db.query(models.Gruppo)
+        .options(joinedload(models.Gruppo.membri).joinedload(models.GruppoMembro.utente))
+        .filter(models.Gruppo.id == gruppo_id)
+        .first()
+    )
+    if gruppo is None or gruppo.codice_conferma_circolo != codice:
+        return None, None
+    return gruppo, codice
+
+
+@app.get("/circolo/conferma/{token}")
+def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
+    """
+    Pagina pubblica (nessuna credenziale) raggiungibile dal link mandato
+    al circolo e all'operatore: permette di confermare la prenotazione
+    (indicando facoltativamente il numero del campo) o segnalare che il
+    campo non è disponibile. Il token stesso, con il suo codice casuale,
+    fa da chiave d'accesso privata.
+    """
+    gruppo, _ = _carica_gruppo_da_token(token, db)
+    if gruppo is None:
+        return _pagina_conferma_circolo_html(
+            "Link non valido",
+            "<p>Questo link non è valido, o si riferisce a una richiesta che non esiste più.</p>",
+        )
+
+    circolo = db.query(models.Circolo).filter(models.Circolo.id == gruppo.circolo_id).first()
+    orario = _orario_leggibile_gruppo(gruppo.slot_inizio)
+    nomi_giocatori = ", ".join(f"{m.utente.nome} {m.utente.cognome}" for m in gruppo.membri)
+
+    if gruppo.stato != "CONFERMATO":
+        # Qualcuno (il circolo stesso da un altro dispositivo, o
+        # l'operatore dal pannello) ha già gestito questo gruppo.
+        return _pagina_conferma_circolo_html(
+            "Già gestito",
+            "<p class='esito ok'>✅ Questa prenotazione è già stata gestita in precedenza, non c'è più nulla da fare qui.</p>",
+        )
+
+    corpo = f"""
+        <p class="dettaglio"><strong>Circolo:</strong> {circolo.nome}</p>
+        <p class="dettaglio"><strong>Giorno:</strong> {gruppo.giorno} alle {orario}</p>
+        <p class="dettaglio"><strong>Giocatori:</strong> {nomi_giocatori}</p>
+        <form method="POST" action="/circolo/conferma/{token}">
+            <label for="numero_campo">Numero campo (facoltativo)</label>
+            <input type="text" id="numero_campo" name="numero_campo" placeholder="es. 3">
+            <button type="submit" name="azione" value="conferma" class="btn-conferma">Conferma prenotazione</button>
+            <button type="submit" name="azione" value="non_disponibile" class="btn-fallita">Campo non disponibile</button>
+        </form>
+    """
+    return _pagina_conferma_circolo_html("Conferma prenotazione campo", corpo)
+
+
+@app.post("/circolo/conferma/{token}")
+async def gestisci_conferma_circolo(token: str, request: Request, db: Session = Depends(get_db)):
+    gruppo, _ = _carica_gruppo_da_token(token, db)
+    if gruppo is None:
+        return _pagina_conferma_circolo_html(
+            "Link non valido",
+            "<p>Questo link non è valido, o si riferisce a una richiesta che non esiste più.</p>",
+        )
+
+    if gruppo.stato != "CONFERMATO":
+        return _pagina_conferma_circolo_html(
+            "Già gestito",
+            "<p class='esito ok'>✅ Questa prenotazione è già stata gestita in precedenza (magari da un'altra persona), non c'è più nulla da fare qui.</p>",
+        )
+
+    corpo_form = await request.form()
+    azione = corpo_form.get("azione")
+    numero_campo = (corpo_form.get("numero_campo") or "").strip() or None
+
+    try:
+        if azione == "conferma":
+            conferma_prenotazione(db, gruppo.id, numero_campo=numero_campo)
+            return _pagina_conferma_circolo_html(
+                "Fatto!",
+                "<p class='esito ok'>✅ Prenotazione confermata, i 4 giocatori sono stati avvisati. Grazie!</p>",
+            )
+        elif azione == "non_disponibile":
+            fallisce_prenotazione(db, gruppo.id)
+            return _pagina_conferma_circolo_html(
+                "Segnalato",
+                "<p class='esito ok'>Grazie per la segnalazione: i 4 giocatori sono stati avvisati e verranno rimessi in ricerca automaticamente.</p>",
+            )
+        else:
+            return _pagina_conferma_circolo_html("Errore", "<p class='esito errore'>Azione non riconosciuta.</p>")
+    except ValueError as errore:
+        return _pagina_conferma_circolo_html("Errore", f"<p class='esito errore'>{errore}</p>")
 
 
 @app.post("/matching/esegui-ora", dependencies=[Depends(verifica_credenziali_admin)])
@@ -894,6 +1053,7 @@ def lista_gruppi_da_prenotare(db: Session = Depends(get_db)):
     verifichi la disponibilità del campo e confermi/annulli la prenotazione.
     """
     from sqlalchemy.orm import joinedload
+    from zoneinfo import ZoneInfo
 
     gruppi = (
         db.query(models.Gruppo)
@@ -910,12 +1070,22 @@ def lista_gruppi_da_prenotare(db: Session = Depends(get_db)):
         circolo = db.query(models.Circolo).filter(models.Circolo.id == g.circolo_id).first()
         minuti_totali = config.ORA_INIZIO_GIORNATA * 60 + g.slot_inizio * config.DURATA_SLOT_MINUTI
         ore, minuti = divmod(minuti_totali, 60)
+
+        ora_invio_leggibile = None
+        if g.data_richiesta_prenotazione:
+            # Il database salva in UTC - la convertiamo nell'ora italiana
+            # vera (gestisce da sola l'ora legale/solare, niente offset
+            # fisso scritto a mano che diventerebbe sbagliato in inverno).
+            ora_italiana = g.data_richiesta_prenotazione.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Europe/Rome"))
+            ora_invio_leggibile = ora_italiana.strftime("%H:%M")
+
         risultato.append({
             "gruppo_id": g.id,
             "circolo_nome": circolo.nome if circolo else "?",
             "giorno": str(g.giorno),
             "orario": f"{ore:02d}:{minuti:02d}",
             "giocatori": [f"{m.utente.nome} {m.utente.cognome} ({m.lato_assegnato})" for m in g.membri],
+            "ora_invio": ora_invio_leggibile,
         })
     return risultato
 

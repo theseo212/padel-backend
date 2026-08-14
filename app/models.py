@@ -109,6 +109,11 @@ class Gruppo(Base):
     data_proposta = Column(DateTime, server_default=func.now())
     scadenza_conferma = Column(DateTime, nullable=False)
 
+    # Aggiunti per la conferma prenotazione da parte del circolo stesso
+    codice_conferma_circolo = Column(String(20), nullable=True)  # token casuale per il link privato
+    data_richiesta_prenotazione = Column(DateTime, nullable=True)  # quando è stato chiesto di prenotare
+    numero_campo = Column(String(20), nullable=True)  # facoltativo, inserito da chi conferma
+
     membri = relationship("GruppoMembro", back_populates="gruppo")
 
 
