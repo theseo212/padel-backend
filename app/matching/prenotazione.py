@@ -31,12 +31,12 @@ def _orario_leggibile(slot_inizio: int) -> str:
     return f"{ore:02d}:{minuti:02d}"
 
 
-def conferma_prenotazione(db: Session, gruppo_id: int) -> models.Partita:
+def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None = None) -> models.Partita:
     """
-    Chiamata dall'operatore (o in futuro da un'integrazione automatica)
-    quando il campo RISULTA DISPONIBILE. Crea la partita nel database,
-    passa le richieste allo stato finale CONFERMATA, e avvisa i 4 giocatori
-    (incluso il promemoria sul pagamento al circolo, punto 16).
+    Chiamata dall'operatore (o dal circolo stesso, dalla sua pagina
+    dedicata) quando il campo RISULTA DISPONIBILE. Crea la partita nel
+    database, passa le richieste allo stato finale CONFERMATA, e avvisa i
+    4 giocatori (incluso il numero del campo, se indicato).
     """
     gruppo = _carica_gruppo_completo(db, gruppo_id)
     if gruppo is None:
@@ -57,15 +57,18 @@ def conferma_prenotazione(db: Session, gruppo_id: int) -> models.Partita:
     db.add(partita)
 
     gruppo.stato = "PRENOTATO"
+    if numero_campo:
+        gruppo.numero_campo = numero_campo
 
     for membro in gruppo.membri:
         richiesta = db.query(models.Richiesta).filter(models.Richiesta.id == membro.richiesta_id).first()
         richiesta.stato = "CONFERMATA"
 
+    riga_campo = f"\nCampo: {numero_campo}" if numero_campo else ""
     testo = (
         f"✅ Fatto! Ho confermato la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
-        f"Giorno: {gruppo.giorno} alle {orario}\n"
+        f"Giorno: {gruppo.giorno} alle {orario}{riga_campo}\n"
         f"Il pagamento del campo si effettua direttamente al circolo all'arrivo, come di consueto.\n"
         f"Buona partita!"
     )

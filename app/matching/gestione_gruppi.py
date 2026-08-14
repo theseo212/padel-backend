@@ -89,7 +89,7 @@ def _completa_gruppo_se_possibile(db: Session, gruppo: models.Gruppo) -> bool:
     if tutti_confermati:
         gruppo.stato = "CONFERMATO"
         circolo = db.query(models.Circolo).filter(models.Circolo.id == gruppo.circolo_id).first()
-        notifica_gruppo_confermato(gruppo.membri, gruppo, circolo)
+        notifica_gruppo_confermato(gruppo.membri, gruppo, circolo, db)
         db.commit()
         return True
 

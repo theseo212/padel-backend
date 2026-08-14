@@ -3,10 +3,13 @@ Costruisce il testo dei messaggi WhatsApp legati a un gruppo (Step 03)
 e li invia a ciascuno dei 4 giocatori coinvolti.
 """
 
+import secrets
+from datetime import datetime
 from app import config
 from app.config import ORA_INIZIO_GIORNATA, DURATA_SLOT_MINUTI
 from app.services.whatsapp import (
-    invia_proposta_gruppo, invia_annullamento_gruppo, invia_gruppo_confermato, invia_notifica_operatore,
+    invia_proposta_gruppo, invia_annullamento_gruppo, invia_gruppo_confermato,
+    invia_notifica_operatore, invia_richiesta_prenotazione_circolo,
 )
 
 
@@ -46,7 +49,7 @@ def notifica_annullamento_gruppo(membri, motivo: str):
         invia_annullamento_gruppo(membro.utente.whatsapp_numero, motivo)
 
 
-def notifica_gruppo_confermato(membri, gruppo, circolo):
+def notifica_gruppo_confermato(membri, gruppo, circolo, db):
     """Invia il messaggio quando tutti e 4 hanno confermato (in attesa della prenotazione)."""
     orario = slot_a_orario(gruppo.slot_inizio)
     testo = (
@@ -61,12 +64,36 @@ def notifica_gruppo_confermato(membri, gruppo, circolo):
             circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
         )
 
+    # Genera un codice casuale (non indovinabile) per il link privato di
+    # conferma prenotazione, e registra l'orario esatto in cui la
+    # richiesta viene inviata - serve al pannello per mostrare quanto
+    # stanno tardando i circoli a rispondere.
+    codice = secrets.token_urlsafe(6)
+    gruppo.codice_conferma_circolo = codice
+    gruppo.data_richiesta_prenotazione = datetime.utcnow()
+    db.commit()
+
+    token_conferma = f"{gruppo.id}-{codice}"
     nomi_giocatori = ", ".join(f"{m.utente.nome} {m.utente.cognome}" for m in membri)
-    testo_operatore = (
+    testo_prenotazione = (
         f"‼️ Nuovo gruppo pronto per la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Giocatori: {nomi_giocatori}\n"
-        f"Vai al pannello per confermare: {config.BACKEND_PUBLIC_URL}/admin"
+        f"Clicca qui sotto per confermare la prenotazione (o segnalare che il campo non è disponibile)."
     )
-    invia_notifica_operatore(testo_operatore, circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario, giocatori=nomi_giocatori)
+
+    # Lo stesso identico messaggio va sia al circolo sia all'operatore:
+    # chi conferma per primo (il circolo dalla sua pagina, o l'operatore
+    # dal pannello) fa scomparire la riga per l'altro, senza conflitti.
+    destinatari = []
+    if circolo.telefono:
+        destinatari.append(circolo.telefono)
+    destinatari.extend(config.ADMIN_WHATSAPP_NUMERI)
+
+    for numero in destinatari:
+        invia_richiesta_prenotazione_circolo(
+            numero, testo_prenotazione,
+            circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
+            giocatori=nomi_giocatori, token_conferma=token_conferma,
+        )
