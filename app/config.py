@@ -47,6 +47,7 @@ ADMIN_WHATSAPP_NUMERI = [
     numero.strip() for numero in os.getenv("ADMIN_WHATSAPP_NUMERI", "").split(",") if numero.strip()
 ]
 TEMPLATE_NOTIFICA_OPERATORE = os.getenv("TEMPLATE_NOTIFICA_OPERATORE")
+TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO = os.getenv("TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO")
 
 # === TWILIO (invio WhatsApp reale) ===
 # Se questi valori non sono impostati, il sistema resta in modalità
