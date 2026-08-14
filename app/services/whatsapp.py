@@ -94,7 +94,7 @@ def invia_otp_whatsapp(numero_whatsapp: str, codice_otp: str) -> bool:
     # validità sono stati impostati una volta per sempre in fase di
     # creazione del template su Twilio, non si mandano più ad ogni invio.
     testo = (
-        f"Ciao! Sono Anna 👋 Per completare la tua richiesta su {NOME_BRAND}, "
+        f"Ciao! Sono Anna ✅ Per completare la tua richiesta su {NOME_BRAND}, "
         f"usa questo codice: {codice_otp} (valido {OTP_DURATA_VALIDITA_MINUTI} minuti)."
     ) + FIRMA_MESSAGGIO
     variabili = {"1": codice_otp}
@@ -130,7 +130,7 @@ def invia_proposta_gruppo(numero_whatsapp: str, testo_proposta: str, circolo: st
 def invia_annullamento_gruppo(numero_whatsapp: str, motivo: str):
     testo = (
         f"Ops! Ho dovuto annullare questa partita. Motivo: {motivo}\n"
-        f"Non preoccuparti, continuo subito a cercarti nuovi compagni! 🎾"
+        f"Non preoccuparti, continuo subito a cercarti nuovi compagni!"
     ) + FIRMA_MESSAGGIO
     variabili = {"1": motivo}
     _invia(numero_whatsapp, testo, TEMPLATE_ANNULLAMENTO, variabili)
@@ -171,7 +171,7 @@ def invia_promemoria_feedback(numero_whatsapp: str, riferimento_partita: str = "
     validato per annapadel_richiesta_feedback): Meta approva come
     "Utility" solo i sondaggi legati a un'interazione specifica.
     """
-    testo = f"Psst! Non dimenticare di valutare i tuoi compagni della partita al {riferimento_partita} 😊" + FIRMA_MESSAGGIO
+    testo = f"Psst! Non dimenticare di valutare i tuoi compagni della partita al {riferimento_partita} ✅" + FIRMA_MESSAGGIO
     variabili = {"1": riferimento_partita} if riferimento_partita else {}
     _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_FEEDBACK, variabili)
 
