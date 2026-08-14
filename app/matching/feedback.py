@@ -141,7 +141,7 @@ def rispondi_feedback_da_whatsapp(db: Session, numero_whatsapp: str, testo_rispo
 def controlla_partite_da_segnare_automaticamente(db: Session):
     """
     Da eseguire periodicamente: trova le partite PRENOTATE il cui orario
-    di inizio + la durata prevista sono già passati, e le segna
+    di inizio + un breve margine sono già passati, e le segna
     automaticamente come GIOCATA, avviando il ciclo di feedback.
 
     Non serve nessun intervento umano qui: l'operatore non ha nessuna
@@ -149,17 +149,22 @@ def controlla_partite_da_segnare_automaticamente(db: Session):
     il sistema può calcolarlo da solo. Il bottone manuale nel pannello
     resta disponibile solo come eccezione (es. partita finita in anticipo).
     """
-    adesso = datetime.utcnow()
-    durata_partita_minuti = config.DURATA_MINIMA_PARTITA_SLOT * config.DURATA_SLOT_MINUTI
+    from zoneinfo import ZoneInfo
+
+    # giorno + ora_inizio sono salvati come orario ITALIANO "ingenuo" (senza
+    # fuso), esattamente come li inserisce l'utente - vanno confrontati con
+    # l'ora italiana vera, non con l'UTC "grezzo" (altrimenti il conto
+    # sballa di 1-2 ore, a seconda del periodo dell'anno).
+    adesso_italia = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
 
     partite_prenotate = db.query(models.Partita).filter(models.Partita.stato == "PRENOTATA").all()
 
     segnate = 0
     for partita in partite_prenotate:
         inizio_partita = datetime.combine(partita.giorno, partita.ora_inizio)
-        fine_prevista = inizio_partita + timedelta(minutes=durata_partita_minuti)
+        momento_da_considerarla_giocata = inizio_partita + timedelta(minutes=config.MINUTI_ATTESA_PARTITA_GIOCATA)
 
-        if adesso >= fine_prevista:
+        if adesso_italia >= momento_da_considerarla_giocata:
             segna_partita_giocata(db, partita.id)
             segnate += 1
 
