@@ -131,7 +131,7 @@ def rispondi_a_gruppo(db: Session, gruppo_id: int, utente_id: int, risposta: str
             invia_conferma_ricevuta(
                 membro.utente.whatsapp_numero,
                 "✅ Ho ricevuto la tua conferma! Appena arrivano anche quelle degli altri, "
-                "ti mando la conferma definitiva del gruppo. ߎ"
+                "ti mando la conferma definitiva del gruppo."
             )
 
         return {"stato_gruppo": gruppo.stato, "completato": gruppo_completato}
@@ -224,7 +224,7 @@ def rispondi_a_gruppo_da_whatsapp(db: Session, numero_whatsapp: str, testo_rispo
                     "Ops, questa proposta di partita non è più valida — il tempo per "
                     "confermare (15 minuti) è scaduto, oppure la situazione è cambiata "
                     "nel frattempo. Se hai ancora una richiesta attiva, continuo comunque "
-                    "a cercarti compagni! ߎ"
+                    "a cercarti compagni!"
                 )
                 return {"stato_gruppo": "SCADUTO_O_GIA_DECISO", "risposta_tardiva": True}
 

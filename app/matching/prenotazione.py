@@ -67,7 +67,7 @@ def conferma_prenotazione(db: Session, gruppo_id: int) -> models.Partita:
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Il pagamento del campo si effettua direttamente al circolo all'arrivo, come di consueto.\n"
-        f"Buona partita! ߎ"
+        f"Buona partita!"
     )
     for membro in gruppo.membri:
         invia_prenotazione_confermata(

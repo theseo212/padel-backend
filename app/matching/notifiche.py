@@ -26,7 +26,7 @@ def notifica_proposta_gruppo(gruppo, membri, circolo):
     nomi = ", ".join(f"{m.utente.nome} {m.utente.cognome} ({m.lato_assegnato})" for m in membri)
 
     testo = (
-        f"🎾 Ho trovato dei compagni per te!\n"
+        f"✅ Ho trovato dei compagni per te!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Giocatori: {nomi}\n\n"
@@ -63,7 +63,7 @@ def notifica_gruppo_confermato(membri, gruppo, circolo):
 
     nomi_giocatori = ", ".join(f"{m.utente.nome} {m.utente.cognome}" for m in membri)
     testo_operatore = (
-        f"🔔 Nuovo gruppo pronto per la prenotazione!\n"
+        f"‼️ Nuovo gruppo pronto per la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Giocatori: {nomi_giocatori}\n"
