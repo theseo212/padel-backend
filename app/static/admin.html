@@ -102,13 +102,14 @@ async function caricaGruppi() {
             return;
         }
 
-        let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Azioni</th></tr>';
+        let html = '<table><tr><th>Circolo</th><th>Giorno</th><th>Ora</th><th>Giocatori</th><th>Ora invio</th><th>Azioni</th></tr>';
         for (const g of gruppi) {
             html += `<tr>
                 <td>${g.circolo_nome}</td>
                 <td>${g.giorno}</td>
                 <td>${g.orario}</td>
                 <td>${g.giocatori.join('<br>')}</td>
+                <td>${g.ora_invio || '-'}</td>
                 <td>
                     <button class="btn-verde" onclick="prenotazione(${g.gruppo_id}, true)">Campo disponibile</button>
                     <button class="btn-rosso" onclick="prenotazione(${g.gruppo_id}, false)">Campo NON disponibile</button>
