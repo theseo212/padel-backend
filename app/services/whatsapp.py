@@ -25,6 +25,7 @@ from app.config import (
     TEMPLATE_PRENOTAZIONE_CONFERMATA, TEMPLATE_PRENOTAZIONE_FALLITA,
     TEMPLATE_RICHIESTA_FEEDBACK, TEMPLATE_PROMEMORIA_FEEDBACK,
     TEMPLATE_SOSPENSIONE, TEMPLATE_PROMEMORIA_MANCATA_PARTITA,
+    TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO,
 )
 
 _TWILIO_CONFIGURATO = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER)
@@ -189,6 +190,22 @@ def invia_promemoria_mancata_partita(numero_whatsapp: str, testo: str, nome: str
     variabili = {"1": nome, "2": giorno, "3": fascia_oraria, "4": id_richiesta} if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PROMEMORIA_MANCATA_PARTITA, variabili,
                   etichetta_simulazione=" - PROMEMORIA")
+
+
+def invia_richiesta_prenotazione_circolo(numero_whatsapp: str, testo: str, circolo: str = "",
+                                           giorno: str = "", orario: str = "", giocatori: str = "",
+                                           token_conferma: str = "") -> bool:
+    """
+    Manda al circolo (e per conoscenza all'operatore) la richiesta di
+    prenotare il campo, con un bottone che porta alla pagina dedicata
+    dove chiunque riceva il messaggio può confermare la prenotazione
+    (indicando facoltativamente il numero del campo) o segnalare che non
+    è disponibile - senza bisogno di nessuna credenziale, il link privato
+    stesso (con il suo codice casuale) fa da chiave d'accesso.
+    """
+    variabili = {"1": circolo, "2": giorno, "3": orario, "4": giocatori, "5": token_conferma} if circolo else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO, variabili,
+                  etichetta_simulazione=" - RICHIESTA PRENOTAZIONE CIRCOLO")
 
 
 def invia_notifica_operatore(testo: str, circolo: str = "", giorno: str = "", orario: str = "", giocatori: str = ""):
