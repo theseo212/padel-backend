@@ -74,12 +74,14 @@ def notifica_gruppo_confermato(membri, gruppo, circolo, db):
     db.commit()
 
     token_conferma = f"{gruppo.id}-{codice}"
-    nomi_giocatori = ", ".join(f"{m.utente.nome} {m.utente.cognome}" for m in membri)
+    elenco_giocatori = "\n".join(
+        f"{m.utente.nome} {m.utente.cognome}: {m.utente.whatsapp_numero}" for m in membri
+    )
     testo_prenotazione = (
         f"‼️ Nuovo gruppo pronto per la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
-        f"Giocatori: {nomi_giocatori}\n"
+        f"Giocatori:\n{elenco_giocatori}\n"
         f"Clicca qui sotto per confermare la prenotazione (o segnalare che il campo non è disponibile)."
     )
 
@@ -95,5 +97,5 @@ def notifica_gruppo_confermato(membri, gruppo, circolo, db):
         invia_richiesta_prenotazione_circolo(
             numero, testo_prenotazione,
             circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
-            giocatori=nomi_giocatori, token_conferma=token_conferma,
+            giocatori=elenco_giocatori, token_conferma=token_conferma,
         )
