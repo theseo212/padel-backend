@@ -151,6 +151,7 @@ async function caricaElencoTabelle() {
 
 async function selezionaTabella(nome) {
     tabellaAttuale = nome;
+    window._ordinamento = { colonna: null, direzione: 'asc' };
     document.querySelectorAll('.btn-tabella').forEach(b => b.classList.remove('attivo'));
     const bottone = document.getElementById('btn-' + nome);
     if (bottone) bottone.classList.add('attivo');
@@ -174,6 +175,36 @@ async function caricaRighe() {
     }
 }
 
+function cambiaOrdinamento(colonna) {
+    if (!window._ordinamento) window._ordinamento = { colonna: null, direzione: 'asc' };
+
+    if (window._ordinamento.colonna === colonna) {
+        window._ordinamento.direzione = window._ordinamento.direzione === 'asc' ? 'desc' : 'asc';
+    } else {
+        window._ordinamento = { colonna, direzione: 'asc' };
+    }
+
+    // Ordiniamo l'array VERO (non solo la vista), così gli indici usati da
+    // Modifica/Elimina restano coerenti con quello che si vede a schermo.
+    window._righeCorrenti.sort((a, b) => {
+        let valA = a[colonna];
+        let valB = b[colonna];
+        if (valA === null || valA === undefined) valA = '';
+        if (valB === null || valB === undefined) valB = '';
+
+        const numA = Number(valA), numB = Number(valB);
+        let confronto;
+        if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
+            confronto = numA - numB;
+        } else {
+            confronto = String(valA).localeCompare(String(valB), 'it');
+        }
+        return window._ordinamento.direzione === 'asc' ? confronto : -confronto;
+    });
+
+    renderizzaTabella();
+}
+
 function renderizzaTabella() {
     const colonne = window._colonneCorrenti;
     const righe = window._righeCorrenti;
@@ -184,8 +215,13 @@ function renderizzaTabella() {
         return;
     }
 
+    const freccia = (colonna) => {
+        if (!window._ordinamento || window._ordinamento.colonna !== colonna) return ' ⇅';
+        return window._ordinamento.direzione === 'asc' ? ' ▲' : ' ▼';
+    };
+
     let html = '<table><tr>';
-    colonne.forEach(c => html += `<th>${c}</th>`);
+    colonne.forEach(c => html += `<th style="cursor:pointer" onclick="cambiaOrdinamento('${c}')">${c}${freccia(c)}</th>`);
     html += '<th>Azioni</th></tr>';
 
     righe.forEach((riga, indice) => {
