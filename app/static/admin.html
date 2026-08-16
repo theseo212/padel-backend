@@ -126,10 +126,21 @@ async function caricaGruppi() {
 }
 
 async function prenotazione(gruppoId, disponibile) {
-    const percorso = disponibile
+    let percorso = disponibile
         ? `/gruppi/${gruppoId}/prenotazione/conferma`
         : `/gruppi/${gruppoId}/prenotazione/fallita`;
     const msgDiv = document.getElementById('msg-gruppi');
+
+    if (disponibile) {
+        const orarioEffettivo = prompt(
+            "Se hai dovuto spostare l'orario rispetto a quello proposto, scrivilo qui (formato HH:MM, es. 16:30).\n" +
+            "Lascia vuoto se l'orario è rimasto quello originale."
+        );
+        if (orarioEffettivo === null) return;  // ha premuto Annulla
+        if (orarioEffettivo.trim()) {
+            percorso += `?orario_effettivo=${encodeURIComponent(orarioEffettivo.trim())}`;
+        }
+    }
 
     try {
         const risposta = await fetch(percorso, { method: 'POST' });
