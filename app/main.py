@@ -782,7 +782,7 @@ def _carica_gruppo_da_token(token: str, db: Session):
     dato che questa pagina la usa anche il circolo, senza credenziali.
     """
     try:
-        gruppo_id_str, codice = token.rsplit("-", 1)
+        gruppo_id_str, codice = token.rsplit(".", 1)
         gruppo_id = int(gruppo_id_str)
     except (ValueError, IndexError):
         return None, None
@@ -833,6 +833,8 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
         <form method="POST" action="/circolo/conferma/{token}">
             <label for="numero_campo">Numero campo (facoltativo)</label>
             <input type="text" id="numero_campo" name="numero_campo" placeholder="es. 3">
+            <label for="orario_effettivo">Hai dovuto spostare l'orario? (facoltativo, lascia vuoto se uguale a quello proposto)</label>
+            <input type="text" id="orario_effettivo" name="orario_effettivo" placeholder="es. 16:30">
             <button type="submit" name="azione" value="conferma" class="btn-conferma">Conferma prenotazione</button>
             <button type="submit" name="azione" value="non_disponibile" class="btn-fallita">Campo non disponibile</button>
         </form>
@@ -858,10 +860,19 @@ async def gestisci_conferma_circolo(token: str, request: Request, db: Session = 
     corpo_form = await request.form()
     azione = corpo_form.get("azione")
     numero_campo = (corpo_form.get("numero_campo") or "").strip() or None
+    orario_effettivo = (corpo_form.get("orario_effettivo") or "").strip() or None
+
+    if orario_effettivo:
+        import re
+        if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", orario_effettivo):
+            return _pagina_conferma_circolo_html(
+                "Formato orario non valido",
+                "<p class='esito errore'>L'orario va scritto nel formato HH:MM, per esempio 16:30. Torna indietro e riprova.</p>",
+            )
 
     try:
         if azione == "conferma":
-            conferma_prenotazione(db, gruppo.id, numero_campo=numero_campo)
+            conferma_prenotazione(db, gruppo.id, numero_campo=numero_campo, orario_effettivo=orario_effettivo)
             return _pagina_conferma_circolo_html(
                 "Fatto!",
                 "<p class='esito ok'>✅ Prenotazione confermata, i 4 giocatori sono stati avvisati. Grazie!</p>",
@@ -977,13 +988,15 @@ def controlla_timeout_manuale(db: Session = Depends(get_db)):
 
 
 @app.post("/gruppi/{gruppo_id}/prenotazione/conferma", dependencies=[Depends(verifica_credenziali_admin)])
-def prenotazione_confermata(gruppo_id: int, db: Session = Depends(get_db)):
+def prenotazione_confermata(gruppo_id: int, orario_effettivo: str | None = None, db: Session = Depends(get_db)):
     """
     Endpoint per l'OPERATORE (Step 04, punto 15): usato quando ha verificato
     che il campo è disponibile e ha effettuato la prenotazione sul circolo.
+    'orario_effettivo' (facoltativo, es. "16:30") serve se ha dovuto
+    spostare leggermente l'orario rispetto a quello inizialmente proposto.
     """
     try:
-        partita = conferma_prenotazione(db, gruppo_id)
+        partita = conferma_prenotazione(db, gruppo_id, orario_effettivo=orario_effettivo)
     except ValueError as errore:
         raise HTTPException(status_code=400, detail=str(errore))
     return {"partita_id": partita.id, "stato": partita.stato}
@@ -1079,12 +1092,18 @@ def lista_gruppi_da_prenotare(db: Session = Depends(get_db)):
             ora_italiana = g.data_richiesta_prenotazione.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Europe/Rome"))
             ora_invio_leggibile = ora_italiana.strftime("%H:%M")
 
+        giocatori_con_fascia = []
+        for m in g.membri:
+            richiesta = db.query(models.Richiesta).filter(models.Richiesta.id == m.richiesta_id).first()
+            fascia = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask)) if richiesta else "?"
+            giocatori_con_fascia.append(f"{m.utente.nome} {m.utente.cognome} ({fascia})")
+
         risultato.append({
             "gruppo_id": g.id,
             "circolo_nome": circolo.nome if circolo else "?",
             "giorno": str(g.giorno),
             "orario": f"{ore:02d}:{minuti:02d}",
-            "giocatori": [f"{m.utente.nome} {m.utente.cognome} ({m.lato_assegnato})" for m in g.membri],
+            "giocatori": giocatori_con_fascia,
             "ora_invio": ora_invio_leggibile,
         })
     return risultato
