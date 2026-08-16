@@ -53,7 +53,7 @@ def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None 
 
     circolo = db.query(models.Circolo).filter(models.Circolo.id == gruppo.circolo_id).first()
     orario_proposto = _orario_leggibile(gruppo.slot_inizio)
-    orario = orario_effettivo if orario_effettivo else orario_proposto
+    orario = orario_effettivo if orario_effettivo else orario_proposto  # va nel DB, resta "pulito" (HH:MM)
 
     partita = models.Partita(
         gruppo_id=gruppo.id,
@@ -72,19 +72,33 @@ def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None 
         richiesta = db.query(models.Richiesta).filter(models.Richiesta.id == membro.richiesta_id).first()
         richiesta.stato = "CONFERMATA"
 
+    # Se l'orario è stato spostato rispetto a quello che i giocatori avevano
+    # già confermato, un dato "silenzioso" nella stessa riga non basta -
+    # chi è distratto rischia di non accorgersene e presentarsi all'ora
+    # sbagliata. Qui evidenziamo il cambiamento SOLO quando c'è davvero,
+    # riusando la stessa variabile del template (nessuna nuova
+    # approvazione Meta necessaria per questo).
+    if orario_effettivo and orario_effettivo != orario_proposto:
+        orario_per_messaggio = (
+            f"{orario} ‼️ ATTENZIONE, ORARIO CAMBIATO rispetto alle {orario_proposto} "
+            f"che avevi già confermato!"
+        )
+    else:
+        orario_per_messaggio = orario
+
     riga_campo = f"\nCampo: {numero_campo}" if numero_campo else ""
     campo_per_variabile = numero_campo if numero_campo else "da confermare all'arrivo"
     testo = (
         f"✅ Fatto! Ho confermato la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
-        f"Giorno: {gruppo.giorno} alle {orario}{riga_campo}\n"
+        f"Giorno: {gruppo.giorno} alle {orario_per_messaggio}{riga_campo}\n"
         f"Il pagamento del campo si effettua direttamente al circolo all'arrivo, come di consueto.\n"
         f"Buona partita!"
     )
     for membro in gruppo.membri:
         invia_prenotazione_confermata(
             membro.utente.whatsapp_numero, testo,
-            circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
+            circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario_per_messaggio,
             campo=campo_per_variabile,
         )
 
