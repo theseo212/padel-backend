@@ -72,6 +72,23 @@ def _valida_formato_orario(valore):
     return valore
 
 
+def _normalizza_telefono_circolo(valore):
+    """
+    Se manca il prefisso internazionale, lo aggiunge da sola (assumendo
+    +39, dato che il sistema è pensato per l'Italia) - senza questo, un
+    numero inserito senza + passa silenzioso fino a un errore Twilio
+    difficile da notare (i messaggi falliscono senza che nessuno se ne
+    accorga subito).
+    """
+    if valore is None or valore == "":
+        return valore
+    valore = valore.strip()
+    if not valore.startswith("+"):
+        valore = valore.lstrip("0")  # es. "0371..." -> "371..." prima di aggiungere +39
+        valore = "+39" + valore
+    return valore
+
+
 class CircoloCreate(BaseModel):
     nome: str
     indirizzo: str | None = None
@@ -87,6 +104,7 @@ class CircoloCreate(BaseModel):
 
     _valida_apertura = field_validator("orario_apertura")(_valida_formato_orario)
     _valida_chiusura = field_validator("orario_chiusura")(_valida_formato_orario)
+    _normalizza_telefono = field_validator("telefono")(_normalizza_telefono_circolo)
 
 
 class CircoloUpdate(BaseModel):
@@ -105,6 +123,7 @@ class CircoloUpdate(BaseModel):
 
     _valida_apertura = field_validator("orario_apertura")(_valida_formato_orario)
     _valida_chiusura = field_validator("orario_chiusura")(_valida_formato_orario)
+    _normalizza_telefono = field_validator("telefono")(_normalizza_telefono_circolo)
 
 
 class ContattoCreate(BaseModel):
