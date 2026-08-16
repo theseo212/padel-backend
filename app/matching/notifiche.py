@@ -74,14 +74,18 @@ def notifica_gruppo_confermato(membri, gruppo, circolo, db):
     db.commit()
 
     token_conferma = f"{gruppo.id}-{codice}"
-    elenco_giocatori = "\n".join(
+    # WhatsApp vieta i ritorni a capo DENTRO una singola variabile (anche
+    # se il JSON è valido) - quindi separiamo i 4 giocatori con " - "
+    # invece di un vero a capo, restando su un'unica variabile (evitiamo
+    # così di dover cambiare la struttura del template già approvato).
+    elenco_giocatori = " - ".join(
         f"{m.utente.nome} {m.utente.cognome}: {m.utente.whatsapp_numero}" for m in membri
     )
     testo_prenotazione = (
         f"‼️ Nuovo gruppo pronto per la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
-        f"Giocatori:\n{elenco_giocatori}\n"
+        f"Giocatori: {elenco_giocatori}\n"
         f"Clicca qui sotto per confermare la prenotazione (o segnalare che il campo non è disponibile)."
     )
 
