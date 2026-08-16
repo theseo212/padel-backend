@@ -1092,11 +1092,21 @@ def lista_gruppi_da_prenotare(db: Session = Depends(get_db)):
             ora_italiana = g.data_richiesta_prenotazione.replace(tzinfo=ZoneInfo("UTC")).astimezone(ZoneInfo("Europe/Rome"))
             ora_invio_leggibile = ora_italiana.strftime("%H:%M")
 
-        giocatori_con_fascia = []
+        giocatori_con_ampiezza = []
         for m in g.membri:
             richiesta = db.query(models.Richiesta).filter(models.Richiesta.id == m.richiesta_id).first()
-            fascia = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask)) if richiesta else "?"
-            giocatori_con_fascia.append(f"{m.utente.nome} {m.utente.cognome} ({fascia})")
+            if richiesta:
+                fascia = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask))
+                # Minuti totali DAVVERO disponibili (conta i bit accesi, non
+                # solo "fine meno inizio") - corretto anche se in futuro
+                # qualcuno avesse due fasce separate nello stesso giorno.
+                minuti_disponibili = bin(richiesta.disponibilita_bitmask).count("1") * config.DURATA_SLOT_MINUTI
+            else:
+                fascia, minuti_disponibili = "?", 0
+            giocatori_con_ampiezza.append((minuti_disponibili, f"{m.utente.nome} {m.utente.cognome} ({fascia})"))
+
+        giocatori_con_ampiezza.sort(key=lambda coppia: coppia[0], reverse=True)
+        giocatori_con_fascia = [testo for _, testo in giocatori_con_ampiezza]
 
         risultato.append({
             "gruppo_id": g.id,
