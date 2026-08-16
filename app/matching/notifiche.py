@@ -81,7 +81,7 @@ def notifica_gruppo_confermato(membri, gruppo, circolo, db):
     gruppo.data_richiesta_prenotazione = datetime.utcnow()
     db.commit()
 
-    token_conferma = f"{gruppo.id}-{codice}"
+    token_conferma = f"{gruppo.id}.{codice}"
     # WhatsApp vieta i ritorni a capo DENTRO una singola variabile (anche
     # se il JSON è valido) - quindi separiamo i 4 giocatori con " - "
     # invece di un vero a capo, restando su un'unica variabile (evitiamo

@@ -31,12 +31,19 @@ def _orario_leggibile(slot_inizio: int) -> str:
     return f"{ore:02d}:{minuti:02d}"
 
 
-def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None = None) -> models.Partita:
+def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None = None,
+                            orario_effettivo: str | None = None) -> models.Partita:
     """
     Chiamata dall'operatore (o dal circolo stesso, dalla sua pagina
     dedicata) quando il campo RISULTA DISPONIBILE. Crea la partita nel
     database, passa le richieste allo stato finale CONFERMATA, e avvisa i
     4 giocatori (incluso il numero del campo, se indicato).
+
+    'orario_effettivo' è facoltativo: se chi prenota ha dovuto spostare
+    l'orario di un po' rispetto a quello inizialmente proposto (es. il
+    campo era libero solo mezz'ora dopo), questo è il posto per
+    comunicarlo - senza, l'orario "vero" scritto sul database e mandato
+    ai giocatori resterebbe quello sbagliato/vecchio.
     """
     gruppo = _carica_gruppo_completo(db, gruppo_id)
     if gruppo is None:
@@ -45,7 +52,8 @@ def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None 
         raise ValueError(f"Il gruppo non è nello stato giusto per essere prenotato (stato: {gruppo.stato})")
 
     circolo = db.query(models.Circolo).filter(models.Circolo.id == gruppo.circolo_id).first()
-    orario = _orario_leggibile(gruppo.slot_inizio)
+    orario_proposto = _orario_leggibile(gruppo.slot_inizio)
+    orario = orario_effettivo if orario_effettivo else orario_proposto
 
     partita = models.Partita(
         gruppo_id=gruppo.id,
@@ -65,6 +73,7 @@ def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None 
         richiesta.stato = "CONFERMATA"
 
     riga_campo = f"\nCampo: {numero_campo}" if numero_campo else ""
+    campo_per_variabile = numero_campo if numero_campo else "da confermare all'arrivo"
     testo = (
         f"✅ Fatto! Ho confermato la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
@@ -76,6 +85,7 @@ def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None 
         invia_prenotazione_confermata(
             membro.utente.whatsapp_numero, testo,
             circolo=circolo.nome, giorno=str(gruppo.giorno), orario=orario,
+            campo=campo_per_variabile,
         )
 
     db.commit()
