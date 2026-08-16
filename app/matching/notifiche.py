@@ -26,7 +26,15 @@ def notifica_proposta_gruppo(gruppo, membri, circolo):
     il circolo, l'orario, e richiede conferma entro 15 minuti (punto 13).
     """
     orario = slot_a_orario(gruppo.slot_inizio)
-    nomi = ", ".join(f"{m.utente.nome} {m.utente.cognome} ({m.lato_assegnato})" for m in membri)
+    # Solo iniziale del cognome, non per intero: la segreteria (nell'altro
+    # messaggio) ha bisogno dell'identità completa per contattare/prenotare,
+    # ma tra i 4 giocatori stessi basta riconoscersi a grandi linee, non
+    # serve l'identità completa di 3 sconosciuti prima ancora di confermare.
+    nomi = ", ".join(
+        f"{m.utente.nome} {m.utente.cognome[0]}. ({m.lato_assegnato})" if m.utente.cognome
+        else f"{m.utente.nome} ({m.lato_assegnato})"
+        for m in membri
+    )
 
     testo = (
         f"✅ Ho trovato dei compagni per te!\n"
