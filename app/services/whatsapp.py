@@ -197,11 +197,11 @@ def invia_richiesta_prenotazione_circolo(numero_whatsapp: str, testo: str, circo
                                            token_conferma: str = "") -> bool:
     """
     Manda al circolo (e per conoscenza all'operatore) la richiesta di
-    prenotare il campo, con un bottone che porta alla pagina dedicata
-    dove chiunque riceva il messaggio può confermare la prenotazione
-    (indicando facoltativamente il numero del campo) o segnalare che non
-    è disponibile - senza bisogno di nessuna credenziale, il link privato
-    stesso (con il suo codice casuale) fa da chiave d'accesso.
+    prenotare il campo, con un bottone che porta alla pagina dedicata.
+    Attenzione: 'giocatori' NON deve mai contenere ritorni a capo -
+    WhatsApp li vieta dentro il valore di una singola variabile (anche se
+    il JSON è tecnicamente valido) - va costruito con un separatore tipo
+    " - ", non "\\n".
     """
     variabili = {"1": circolo, "2": giorno, "3": orario, "4": giocatori, "5": token_conferma} if circolo else None
     return _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO, variabili,
