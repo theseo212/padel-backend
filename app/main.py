@@ -995,6 +995,10 @@ def prenotazione_confermata(gruppo_id: int, orario_effettivo: str | None = None,
     'orario_effettivo' (facoltativo, es. "16:30") serve se ha dovuto
     spostare leggermente l'orario rispetto a quello inizialmente proposto.
     """
+    if orario_effettivo:
+        import re
+        if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", orario_effettivo):
+            raise HTTPException(status_code=400, detail="L'orario va scritto nel formato HH:MM, per esempio 16:30.")
     try:
         partita = conferma_prenotazione(db, gruppo_id, orario_effettivo=orario_effettivo)
     except ValueError as errore:
