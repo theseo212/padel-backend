@@ -988,19 +988,19 @@ def controlla_timeout_manuale(db: Session = Depends(get_db)):
 
 
 @app.post("/gruppi/{gruppo_id}/prenotazione/conferma", dependencies=[Depends(verifica_credenziali_admin)])
-def prenotazione_confermata(gruppo_id: int, orario_effettivo: str | None = None, db: Session = Depends(get_db)):
+def prenotazione_confermata(gruppo_id: int, orario_effettivo: str | None = None,
+                              numero_campo: str | None = None, db: Session = Depends(get_db)):
     """
     Endpoint per l'OPERATORE (Step 04, punto 15): usato quando ha verificato
     che il campo è disponibile e ha effettuato la prenotazione sul circolo.
-    'orario_effettivo' (facoltativo, es. "16:30") serve se ha dovuto
-    spostare leggermente l'orario rispetto a quello inizialmente proposto.
+    'orario_effettivo' e 'numero_campo' sono entrambi facoltativi.
     """
     if orario_effettivo:
         import re
         if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", orario_effettivo):
             raise HTTPException(status_code=400, detail="L'orario va scritto nel formato HH:MM, per esempio 16:30.")
     try:
-        partita = conferma_prenotazione(db, gruppo_id, orario_effettivo=orario_effettivo)
+        partita = conferma_prenotazione(db, gruppo_id, orario_effettivo=orario_effettivo, numero_campo=numero_campo)
     except ValueError as errore:
         raise HTTPException(status_code=400, detail=str(errore))
     return {"partita_id": partita.id, "stato": partita.stato}
