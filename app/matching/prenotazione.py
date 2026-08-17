@@ -87,7 +87,11 @@ def conferma_prenotazione(db: Session, gruppo_id: int, numero_campo: str | None 
         orario_per_messaggio = orario
 
     riga_campo = f"\nCampo: {numero_campo}" if numero_campo else ""
-    campo_per_variabile = numero_campo if numero_campo else "da confermare all'arrivo"
+    # Il tuo template ha "chiedete del campo {{4}} prenotato da AnnaPadel"
+    # - con {{4}} vuoto la frase resta comunque naturale ("chiedete del
+    # campo prenotato da AnnaPadel"), quindi qui basta la stringa vuota,
+    # niente più bisogno di un testo di riserva che rompeva la grammatica.
+    campo_per_variabile = numero_campo if numero_campo else ""
     testo = (
         f"✅ Fatto! Ho confermato la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
