@@ -530,7 +530,7 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
             f"Circoli: {', '.join(c.nome for c in circoli)}\n\n"
             f"Io non ti disturberò più con altri messaggi finché non avrò formato la partita giusta per te. "
             f"Quando sarà pronta ti manderò un messaggio per avere la tua conferma e poter prenotare il campo.\n"
-            f"Attenzione: avrai solo 15 minuti per dare questa tua conferma!!\n"
+            f"Attenzione: avrai solo {config.TIMEOUT_CONFERMA_MINUTI} minuti per dare questa tua conferma!!\n"
             f"Se nel frattempo vuoi vedere il riassunto e lo stato delle tue richieste, usa il pulsante qui sotto."
         )
         riepilogo_inviato_davvero = invia_riepilogo_richiesta(
@@ -608,7 +608,7 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
             f"Circoli: {', '.join(c.nome for c in ultima_richiesta.circoli)}\n\n"
             f"Io non ti disturberò più con altri messaggi finché non avrò formato la partita giusta per te. "
             f"Quando sarà pronta ti manderò un messaggio per avere la tua conferma e poter prenotare il campo.\n"
-            f"Attenzione: avrai solo 15 minuti per dare questa tua conferma!!\n"
+            f"Attenzione: avrai solo {config.TIMEOUT_CONFERMA_MINUTI} minuti per dare questa tua conferma!!\n"
             f"Se nel frattempo vuoi vedere il riassunto e lo stato delle tue richieste, usa il pulsante qui sotto."
         )
         invia_riepilogo_richiesta(
