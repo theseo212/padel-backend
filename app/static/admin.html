@@ -137,9 +137,15 @@ async function prenotazione(gruppoId, disponibile) {
             "Lascia vuoto se l'orario è rimasto quello originale."
         );
         if (orarioEffettivo === null) return;  // ha premuto Annulla
-        if (orarioEffettivo.trim()) {
-            percorso += `?orario_effettivo=${encodeURIComponent(orarioEffettivo.trim())}`;
-        }
+
+        const numeroCampo = prompt("Numero del campo (facoltativo, lascia vuoto se non lo comunichi ai giocatori):");
+        if (numeroCampo === null) return;  // ha premuto Annulla
+
+        const parametri = new URLSearchParams();
+        if (orarioEffettivo.trim()) parametri.set('orario_effettivo', orarioEffettivo.trim());
+        if (numeroCampo.trim()) parametri.set('numero_campo', numeroCampo.trim());
+        const querystring = parametri.toString();
+        if (querystring) percorso += `?${querystring}`;
     }
 
     try {
