@@ -1,7 +1,7 @@
 """
 Step 03/04 (parte "conferma"): gestisce le risposte dei giocatori a una
-proposta di partita, il timeout dei 15 minuti, e le conseguenze previste
-(contatore mancate conferme, sospensione dopo 3 - punto 14).
+proposta di partita, il timeout (configurabile, TIMEOUT_CONFERMA_MINUTI),
+e le conseguenze previste (contatore mancate conferme, sospensione dopo 3 - punto 14).
 """
 
 from datetime import datetime, timedelta
@@ -222,7 +222,7 @@ def rispondi_a_gruppo_da_whatsapp(db: Session, numero_whatsapp: str, testo_rispo
                 invia_risposta_tardiva(
                     utente.whatsapp_numero,
                     "Ops, questa proposta di partita non è più valida — il tempo per "
-                    "confermare (15 minuti) è scaduto, oppure la situazione è cambiata "
+                    f"confermare ({config.TIMEOUT_CONFERMA_MINUTI} minuti) è scaduto, oppure la situazione è cambiata "
                     "nel frattempo. Se hai ancora una richiesta attiva, continuo comunque "
                     "a cercarti compagni!"
                 )

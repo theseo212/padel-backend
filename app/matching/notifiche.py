@@ -23,7 +23,13 @@ def slot_a_orario(slot_inizio: int) -> str:
 def notifica_proposta_gruppo(gruppo, membri, circolo):
     """
     Invia a ognuno dei 4 membri il messaggio di proposta con i nomi di tutti,
-    il circolo, l'orario, e richiede conferma entro 15 minuti (punto 13).
+    il circolo, l'orario, e richiede conferma entro TIMEOUT_CONFERMA_MINUTI
+    (punto 13) - letto dalla configurazione, non scritto a mano, così
+    cambiando quella variabile su Railway il testo resta sempre coerente
+    col vero limite di tempo (il messaggio VERO che arriva agli utenti
+    segue comunque il testo fisso del template su Meta, che va comunque
+    aggiornato a parte - questo testo qui serve solo come riserva, per il
+    caso in cui l'invio tramite template dovesse fallire).
     """
     orario = slot_a_orario(gruppo.slot_inizio)
     # Solo iniziale del cognome, non per intero: la segreteria (nell'altro
@@ -41,7 +47,7 @@ def notifica_proposta_gruppo(gruppo, membri, circolo):
         f"Circolo: {circolo.nome}\n"
         f"Giorno: {gruppo.giorno} alle {orario}\n"
         f"Giocatori: {nomi}\n\n"
-        f"Confermi entro 15 minuti? [CONFERMA] [RIFIUTA]"
+        f"Confermi entro {config.TIMEOUT_CONFERMA_MINUTI} minuti? [CONFERMA] [RIFIUTA]"
     )
 
     for membro in membri:
