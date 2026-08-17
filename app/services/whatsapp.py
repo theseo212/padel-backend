@@ -150,8 +150,9 @@ def invia_sospensione_account(numero_whatsapp: str, giorni: int):
     _invia(numero_whatsapp, testo, TEMPLATE_SOSPENSIONE, variabili)
 
 
-def invia_prenotazione_confermata(numero_whatsapp: str, testo: str, circolo: str = "", giorno: str = "", orario: str = ""):
-    variabili = {"1": circolo, "2": giorno, "3": orario} if circolo else None
+def invia_prenotazione_confermata(numero_whatsapp: str, testo: str, circolo: str = "", giorno: str = "",
+                                    orario: str = "", campo: str = ""):
+    variabili = {"1": circolo, "2": giorno, "3": orario, "4": campo} if circolo else None
     _invia(numero_whatsapp, testo, TEMPLATE_PRENOTAZIONE_CONFERMATA, variabili)
 
 
