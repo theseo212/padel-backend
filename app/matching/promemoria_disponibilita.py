@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, time
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, config
-from app.services.whatsapp import invia_promemoria_mancata_partita
+from app.services.whatsapp import invia_promemoria_mancata_partita, invia_richiesta_scaduta
 from app.services.bitmask import bitmask_a_fasce_leggibili
 
 
@@ -97,3 +97,41 @@ def controlla_promemoria_mancata_partita(db: Session, adesso: datetime | None = 
 
     db.commit()
     return inviati
+
+
+def controlla_richieste_scadute(db: Session):
+    """
+    Da eseguire periodicamente (una volta al giorno è sufficiente): sposta
+    a SCADUTA le richieste ancora IN_RICERCA il cui giorno è ormai
+    passato, e avvisa l'utente che non è stato trovato nessun gruppo
+    compatibile in tempo - senza questo, la richiesta resterebbe per
+    sempre "in ricerca" nel database, e l'utente non riceverebbe mai
+    nessuna notizia sul suo esito.
+    """
+    from zoneinfo import ZoneInfo
+
+    # Stesso principio già usato altrove: confrontiamo con la data
+    # italiana vera, non con quella UTC "grezza" (altrimenti si rischia
+    # di scadere le richieste con qualche ora di anticipo o ritardo).
+    oggi_italia = datetime.now(ZoneInfo("Europe/Rome")).date()
+
+    richieste_scadute = (
+        db.query(models.Richiesta)
+        .options(joinedload(models.Richiesta.utente))
+        .filter(
+            models.Richiesta.stato == "IN_RICERCA",
+            models.Richiesta.giorno < oggi_italia,
+        )
+        .all()
+    )
+
+    for richiesta in richieste_scadute:
+        richiesta.stato = "SCADUTA"
+        testo = (
+            f"Purtroppo non sono riuscita a trovarti compagni compatibili per il {richiesta.giorno}. "
+            f"Se vuoi, inserisci una nuova richiesta per riprovare cliccando qui sotto."
+        )
+        invia_richiesta_scaduta(richiesta.utente.whatsapp_numero, testo, giorno=str(richiesta.giorno))
+
+    db.commit()
+    return len(richieste_scadute)
