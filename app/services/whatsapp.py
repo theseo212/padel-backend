@@ -25,7 +25,7 @@ from app.config import (
     TEMPLATE_PRENOTAZIONE_CONFERMATA, TEMPLATE_PRENOTAZIONE_FALLITA,
     TEMPLATE_RICHIESTA_FEEDBACK, TEMPLATE_PROMEMORIA_FEEDBACK,
     TEMPLATE_SOSPENSIONE, TEMPLATE_PROMEMORIA_MANCATA_PARTITA,
-    TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO,
+    TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO, TEMPLATE_RICHIESTA_SCADUTA,
 )
 
 _TWILIO_CONFIGURATO = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER)
@@ -235,3 +235,14 @@ def invia_conferma_ricevuta(numero_whatsapp: str, testo: str):
 def invia_risposta_tardiva(numero_whatsapp: str, testo: str):
     """Stesso discorso: risposta dentro una conversazione già aperta, nessun template necessario."""
     _invia(numero_whatsapp, testo, None, None)
+
+
+def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, giorno: str = "") -> bool:
+    """
+    Avvisa l'utente che la sua richiesta è scaduta senza aver trovato
+    compagni compatibili in tempo, con un bottone (fisso, non dinamico -
+    porta sempre alla stessa pagina del form) per inserirne subito una nuova.
+    """
+    variabili = {"1": giorno} if giorno else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_SCADUTA, variabili,
+                  etichetta_simulazione=" - RICHIESTA SCADUTA")
