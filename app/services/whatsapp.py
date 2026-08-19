@@ -237,12 +237,16 @@ def invia_risposta_tardiva(numero_whatsapp: str, testo: str):
     _invia(numero_whatsapp, testo, None, None)
 
 
-def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, giorno: str = "") -> bool:
+def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, tipo_partita: str = "",
+                              giorno: str = "", fascia_oraria: str = "") -> bool:
     """
     Avvisa l'utente che la sua richiesta è scaduta senza aver trovato
     compagni compatibili in tempo, con un bottone (fisso, non dinamico -
     porta sempre alla stessa pagina del form) per inserirne subito una nuova.
+    Cita tipo partita, giorno e fascia oraria: Meta approva come "Utility"
+    solo i messaggi che fanno riferimento a un'interazione SPECIFICA
+    (la richiesta vera dell'utente), non un avviso generico.
     """
-    variabili = {"1": giorno} if giorno else None
+    variabili = {"1": tipo_partita, "2": giorno, "3": fascia_oraria} if tipo_partita else None
     return _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_SCADUTA, variabili,
                   etichetta_simulazione=" - RICHIESTA SCADUTA")
