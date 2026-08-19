@@ -127,11 +127,16 @@ def controlla_richieste_scadute(db: Session):
 
     for richiesta in richieste_scadute:
         richiesta.stato = "SCADUTA"
+        fascia_leggibile = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask))
         testo = (
-            f"Purtroppo non sono riuscita a trovarti compagni compatibili per il {richiesta.giorno}. "
+            f"Purtroppo non sono riuscita a trovarti compagni compatibili per la tua richiesta "
+            f"{richiesta.tipo_partita} del {richiesta.giorno} ({fascia_leggibile}). "
             f"Se vuoi, inserisci una nuova richiesta per riprovare cliccando qui sotto."
         )
-        invia_richiesta_scaduta(richiesta.utente.whatsapp_numero, testo, giorno=str(richiesta.giorno))
+        invia_richiesta_scaduta(
+            richiesta.utente.whatsapp_numero, testo,
+            tipo_partita=richiesta.tipo_partita, giorno=str(richiesta.giorno), fascia_oraria=fascia_leggibile,
+        )
 
     db.commit()
     return len(richieste_scadute)
