@@ -34,7 +34,7 @@ from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
     controlla_partite_da_segnare_automaticamente, rispondi_feedback_da_whatsapp,
 )
-from app.matching.promemoria_disponibilita import controlla_promemoria_mancata_partita
+from app.matching.promemoria_disponibilita import controlla_promemoria_mancata_partita, controlla_richieste_scadute
 
 app = FastAPI(title="AnnaPadel")
 
@@ -150,6 +150,21 @@ def job_promemoria_mancata_partita():
         n = controlla_promemoria_mancata_partita(db)
         if n:
             print(f"[PROMEMORIA] {n} promemoria di mancata partita inviati.")
+    finally:
+        db.close()
+
+
+def job_richieste_scadute():
+    """
+    Funzione eseguita automaticamente una volta al giorno: sposta a
+    SCADUTA le richieste il cui giorno è ormai passato senza aver mai
+    trovato un gruppo compatibile, avvisando l'utente.
+    """
+    db = SessionLocal()
+    try:
+        n = controlla_richieste_scadute(db)
+        if n:
+            print(f"[RICHIESTE SCADUTE] {n} richieste segnate come scadute e utenti avvisati.")
     finally:
         db.close()
 
@@ -270,6 +285,12 @@ def avvia_scheduler():
         "interval",
         minutes=5,
         id="promemoria_mancata_partita",
+    )
+    scheduler.add_job(
+        job_richieste_scadute,
+        "interval",
+        hours=1,
+        id="richieste_scadute",
     )
     scheduler.start()
 
