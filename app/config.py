@@ -9,7 +9,7 @@ import os
 # === IDENTITÀ DEL SERVIZIO ===
 # Tutti i messaggi WhatsApp vengono scritti come se li scrivesse "Anna" in
 # prima persona (una specie di segretaria personale), non un "sistema"
-# impersonale. Il nome del brand e la firma sono ceentralizzati qui.
+# impersonale. Il nome del brand e la firma sono centralizzati qui.
 NOME_BRAND = "AnnaPadel"
 FIRMA_MESSAGGIO = "\n\n♥ La tua Anna"
 
@@ -49,6 +49,8 @@ ADMIN_WHATSAPP_NUMERI = [
 TEMPLATE_NOTIFICA_OPERATORE = os.getenv("TEMPLATE_NOTIFICA_OPERATORE")
 TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO = os.getenv("TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO")
 TEMPLATE_RICHIESTA_SCADUTA = os.getenv("TEMPLATE_RICHIESTA_SCADUTA")
+TEMPLATE_CONFERMA_BOZZA_VOCALE = os.getenv("TEMPLATE_CONFERMA_BOZZA_VOCALE")
+TEMPLATE_MODIFICA_PREFERENZE_VOCALE = os.getenv("TEMPLATE_MODIFICA_PREFERENZE_VOCALE")
 
 # === TWILIO (invio WhatsApp reale) ===
 # Se questi valori non sono impostati, il sistema resta in modalità
