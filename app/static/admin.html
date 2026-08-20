@@ -90,12 +90,55 @@
 <div id="msg-gruppi" class="messaggio"></div>
 
 <script>
+let idGruppiPrecedenti = new Set();
+let primoCaricamentoFatto = false;
+
+function suonaAvvisoNuovoGruppo() {
+    try {
+        const contesto = new (window.AudioContext || window.webkitAudioContext)();
+        const suonaBeep = (frequenza, inizio, durata) => {
+            const oscillatore = contesto.createOscillator();
+            const guadagno = contesto.createGain();
+            oscillatore.connect(guadagno);
+            guadagno.connect(contesto.destination);
+            oscillatore.frequency.value = frequenza;
+            oscillatore.type = 'square';
+            guadagno.gain.setValueAtTime(0.35, contesto.currentTime + inizio);
+            guadagno.gain.exponentialRampToValueAtTime(0.001, contesto.currentTime + inizio + durata);
+            oscillatore.start(contesto.currentTime + inizio);
+            oscillatore.stop(contesto.currentTime + inizio + durata);
+        };
+        // Un doppio "bip-bip" acuto e deciso, ripetuto due volte - pensato
+        // apposta per farsi notare anche se non si sta guardando lo schermo.
+        [0, 0.65].forEach(offset => {
+            suonaBeep(1046, offset, 0.15);
+            suonaBeep(1318, offset + 0.18, 0.2);
+        });
+    } catch (e) {
+        console.error('Impossibile riprodurre il suono di avviso:', e);
+    }
+}
+
 async function caricaGruppi() {
     try {
         const risposta = await fetch('/admin/gruppi-da-prenotare');
         if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
         const gruppi = await risposta.json();
         const contenitore = document.getElementById('tabella-gruppi');
+
+        // Confrontiamo con il caricamento precedente: se compare un
+        // gruppo_id MAI visto prima, suoniamo l'avviso. Non al primissimo
+        // caricamento della pagina (altrimenti suonerebbe subito per
+        // gruppi già presenti da prima, non davvero "nuovi").
+        const idGruppiAttuali = new Set(gruppi.map(g => g.gruppo_id));
+        if (primoCaricamentoFatto) {
+            const nuoviId = [...idGruppiAttuali].filter(id => !idGruppiPrecedenti.has(id));
+            if (nuoviId.length > 0) {
+                suonaAvvisoNuovoGruppo();
+            }
+        }
+        idGruppiPrecedenti = idGruppiAttuali;
+        primoCaricamentoFatto = true;
 
         if (gruppi.length === 0) {
             contenitore.innerHTML = '<p class="vuoto">Nessun gruppo in attesa di prenotazione al momento.</p>';
