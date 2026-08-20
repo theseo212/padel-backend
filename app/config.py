@@ -9,7 +9,7 @@ import os
 # === IDENTITÀ DEL SERVIZIO ===
 # Tutti i messaggi WhatsApp vengono scritti come se li scrivesse "Anna" in
 # prima persona (una specie di segretaria personale), non un "sistema"
-# impersonale. Il nome del brand e la firma sono centralizzati qui.
+# impersonale. Il nome del brand e la firma sono ceentralizzati qui.
 NOME_BRAND = "AnnaPadel"
 FIRMA_MESSAGGIO = "\n\n♥ La tua Anna"
 
