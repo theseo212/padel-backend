@@ -6,6 +6,7 @@ conferma, e la lascia scadere da sola se non risponde in tempo.
 """
 
 from datetime import datetime, timedelta
+from time import sleep
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, config
@@ -95,7 +96,14 @@ def gestisci_richiesta_vocale(db: Session, numero_whatsapp: str, media_url: str)
         f"Hai {config.MINUTI_SCADENZA_BOZZA_VOCALE} minuti per confermare, altrimenti la richiesta decade."
     )
     invia_messaggio_richiesta_vocale(numero_whatsapp, testo)
+    # Piccola pausa tra un invio e l'altro: mandare più messaggi quasi
+    # simultaneamente può farli arrivare in un ordine diverso da quello di
+    # invio (dipende da come Twilio/WhatsApp instradano internamente
+    # testo libero e template) - non è una garanzia assoluta, ma riduce
+    # parecchio il rischio nella pratica.
+    sleep(1)
     invia_link_modifica_preferenze_vocale(numero_whatsapp)
+    sleep(1)
     invia_conferma_bozza_vocale(numero_whatsapp)
 
 
