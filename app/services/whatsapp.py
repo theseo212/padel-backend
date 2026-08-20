@@ -237,6 +237,16 @@ def invia_risposta_tardiva(numero_whatsapp: str, testo: str):
     _invia(numero_whatsapp, testo, None, None)
 
 
+def invia_messaggio_richiesta_vocale(numero_whatsapp: str, testo: str):
+    """
+    Usata per tutti i messaggi del flusso "richiesta via vocale" (riepilogo
+    da confermare, conferma finale, errori) - sempre risposta dentro una
+    conversazione che l'utente ha appena aperto lui stesso mandando il
+    vocale, quindi nessun template necessario.
+    """
+    _invia(numero_whatsapp, testo, None, None)
+
+
 def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, tipo_partita: str = "",
                               giorno: str = "", fascia_oraria: str = "") -> bool:
     """
