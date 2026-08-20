@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session, joinedload
 from app import models, config
 from app.services.bitmask import crea_bitmask, bitmask_a_fasce_leggibili
 from app.services.trascrizione_vocale import trascrivi_e_interpreta_vocale
-from app.services.whatsapp import invia_messaggio_richiesta_vocale
+from app.services.whatsapp import (
+    invia_messaggio_richiesta_vocale, invia_conferma_bozza_vocale, invia_link_modifica_preferenze_vocale,
+)
 
 _LATO_LEGGIBILE = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}
 
@@ -90,11 +92,11 @@ def gestisci_richiesta_vocale(db: Session, numero_whatsapp: str, media_url: str)
         f"Tipo partita: {tipo_partita}\n"
         f"Lato: {lato_leggibile}\n"
         f"Circoli: {nomi_circoli}\n\n"
-        f"Se giorno e orario sono giusti, rispondi CONFERMA per procedere.\n"
-        f"Se vuoi cambiare tipo partita, lato o circoli, usa il form sul sito.\n"
         f"Hai {config.MINUTI_SCADENZA_BOZZA_VOCALE} minuti per confermare, altrimenti la richiesta decade."
     )
     invia_messaggio_richiesta_vocale(numero_whatsapp, testo)
+    invia_link_modifica_preferenze_vocale(numero_whatsapp)
+    invia_conferma_bozza_vocale(numero_whatsapp)
 
 
 def gestisci_conferma_bozza_vocale(db: Session, numero_whatsapp: str, testo_risposta: str):
@@ -119,7 +121,15 @@ def gestisci_conferma_bozza_vocale(db: Session, numero_whatsapp: str, testo_risp
     if bozza is None:
         raise ValueError("Nessuna bozza vocale in sospeso per questo utente")
 
-    if "conferm" not in testo_risposta.strip().lower():
+    testo_normalizzato = testo_risposta.strip().lower()
+
+    if "annull" in testo_normalizzato or testo_normalizzato in ("no",):
+        db.delete(bozza)
+        db.commit()
+        invia_messaggio_richiesta_vocale(numero_whatsapp, "Va bene, ho annullato la richiesta. Puoi sempre farne una nuova quando vuoi!")
+        return
+
+    if "conferm" not in testo_normalizzato:
         raise ValueError("Il testo non sembra una conferma della bozza vocale")
 
     circoli_ids = [int(x) for x in bozza.circoli_ids_csv.split(",") if x]
