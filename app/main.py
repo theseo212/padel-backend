@@ -1623,6 +1623,7 @@ TABELLE_DB = {
     "storico_livello": models.StoricoLivello,
     "conversione_wansport_playtomic": models.ConversioneWansportPlaytomic,
     "messaggi_contatto": models.MessaggioContatto,
+    "bozze_richieste_vocali": models.BozzaRichiestaVocale,
 }
 
 
