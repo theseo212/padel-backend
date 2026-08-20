@@ -25,7 +25,8 @@ from app.config import (
     TEMPLATE_PRENOTAZIONE_CONFERMATA, TEMPLATE_PRENOTAZIONE_FALLITA,
     TEMPLATE_RICHIESTA_FEEDBACK, TEMPLATE_PROMEMORIA_FEEDBACK,
     TEMPLATE_SOSPENSIONE, TEMPLATE_PROMEMORIA_MANCATA_PARTITA,
-    TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO, TEMPLATE_RICHIESTA_SCADUTA,
+    TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO, TEMPLATE_RICHIESTA_SCADUTA, TEMPLATE_CONFERMA_BOZZA_VOCALE,
+    TEMPLATE_MODIFICA_PREFERENZE_VOCALE,
 )
 
 _TWILIO_CONFIGURATO = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER)
@@ -245,6 +246,30 @@ def invia_messaggio_richiesta_vocale(numero_whatsapp: str, testo: str):
     vocale, quindi nessun template necessario.
     """
     _invia(numero_whatsapp, testo, None, None)
+
+
+def invia_conferma_bozza_vocale(numero_whatsapp: str):
+    """
+    Manda i due bottoni "Confermo"/"Annulla" per la bozza vocale - un
+    template Quick Reply "solo salvato" (mai sottomesso all'approvazione
+    Meta): questi bottoni funzionano comunque, SENZA bisogno di
+    approvazione, quando restano dentro una conversazione già aperta
+    dall'utente (come qui, appena dopo il suo stesso vocale) - non serve
+    passare dalla trafila di approvazione già vissuta per gli altri.
+    """
+    _invia(numero_whatsapp, "Confermi questa richiesta?", TEMPLATE_CONFERMA_BOZZA_VOCALE, None)
+
+
+def invia_link_modifica_preferenze_vocale(numero_whatsapp: str):
+    """
+    Bottone che porta al form del sito, per chi vuole cambiare tipo
+    partita/lato/circoli invece di usare quelli riusati automaticamente
+    dalla richiesta più recente. In un messaggio SEPARATO da quello con
+    Confermo/Annulla: WhatsApp non permette di mescolare, nello stesso
+    messaggio, bottoni "Quick Reply" e bottoni "apri sito web".
+    """
+    _invia(numero_whatsapp, "Se vuoi cambiare tipo partita, lato o circoli:",
+           TEMPLATE_MODIFICA_PREFERENZE_VOCALE, None)
 
 
 def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, tipo_partita: str = "",
