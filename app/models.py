@@ -94,6 +94,25 @@ class RichiestaCircolo(Base):
     circolo_id = Column(Integer, ForeignKey("circoli.id"), primary_key=True)
 
 
+class BozzaRichiestaVocale(Base):
+    """
+    Richiesta interpretata da un messaggio vocale, in attesa che l'utente
+    la confermi (o la lasci scadere) - non è ancora una vera Richiesta,
+    lo diventa solo dopo la conferma esplicita.
+    """
+    __tablename__ = "bozze_richieste_vocali"
+
+    id = Column(Integer, primary_key=True)
+    utente_id = Column(Integer, ForeignKey("utenti.id", ondelete="CASCADE"), nullable=False)
+
+    giorno = Column(Date, nullable=False)
+    disponibilita_bitmask = Column(BigInteger, nullable=False)
+    tipo_partita = Column(String(15), nullable=False)
+    circoli_ids_csv = Column(String(200), nullable=False)  # es. "1,4,7"
+
+    creata_il = Column(DateTime, server_default=func.now())
+
+
 class Gruppo(Base):
     __tablename__ = "gruppi"
 

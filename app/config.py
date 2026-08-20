@@ -56,6 +56,8 @@ TEMPLATE_RICHIESTA_SCADUTA = os.getenv("TEMPLATE_RICHIESTA_SCADUTA")
 # comportamento usato durante tutto lo sviluppo. Appena vengono impostati
 # su Railway, l'invio diventa reale senza bisogno di altre modifiche.
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+MINUTI_SCADENZA_BOZZA_VOCALE = int(os.getenv("MINUTI_SCADENZA_BOZZA_VOCALE", "5"))
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER")  # es. "whatsapp:+14155238886"
 

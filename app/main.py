@@ -29,6 +29,9 @@ from app.services.whatsapp import genera_otp, invia_otp_whatsapp, invia_riepilog
 from app.services.email_service import invia_email_contatto
 from app.matching.motore import esegui_ciclo_matching
 from app.matching.gestione_gruppi import rispondi_a_gruppo, controlla_timeout_gruppi, rispondi_a_gruppo_da_whatsapp
+from app.matching.richiesta_vocale import (
+    gestisci_richiesta_vocale, gestisci_conferma_bozza_vocale, controlla_bozze_vocali_scadute,
+)
 from app.matching.prenotazione import conferma_prenotazione, fallisce_prenotazione
 from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
@@ -156,7 +159,7 @@ def job_promemoria_mancata_partita():
 
 def job_richieste_scadute():
     """
-    Funzione eseguita automaticamente una volta al giorno: sposta a
+    Funzione eseguita automaticamente una volta all'ora: sposta a
     SCADUTA le richieste il cui giorno è ormai passato senza aver mai
     trovato un gruppo compatibile, avvisando l'utente.
     """
@@ -165,6 +168,20 @@ def job_richieste_scadute():
         n = controlla_richieste_scadute(db)
         if n:
             print(f"[RICHIESTE SCADUTE] {n} richieste segnate come scadute e utenti avvisati.")
+    finally:
+        db.close()
+
+
+def job_bozze_vocali_scadute():
+    """
+    Funzione eseguita automaticamente ogni 5 minuti: elimina le bozze di
+    richiesta vocale mai confermate in tempo dall'utente.
+    """
+    db = SessionLocal()
+    try:
+        n = controlla_bozze_vocali_scadute(db)
+        if n:
+            print(f"[BOZZE VOCALI] {n} bozze scadute eliminate.")
     finally:
         db.close()
 
@@ -291,6 +308,12 @@ def avvia_scheduler():
         "interval",
         hours=1,
         id="richieste_scadute",
+    )
+    scheduler.add_job(
+        job_bozze_vocali_scadute,
+        "interval",
+        minutes=5,
+        id="bozze_vocali_scadute",
     )
     scheduler.start()
 
@@ -986,17 +1009,34 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
     testo_messaggio = dati.get("Body", "")
 
     try:
-        rispondi_a_gruppo_da_whatsapp(db, numero_mittente, testo_messaggio)
+        # Controllata per PRIMA: se l'utente ha una bozza vocale in
+        # sospeso e sta rispondendo per confermarla, ha la precedenza su
+        # tutto il resto (evita ambiguità nel raro caso in cui avesse
+        # ANCHE una proposta di gruppo in attesa nello stesso momento).
+        gestisci_conferma_bozza_vocale(db, numero_mittente, testo_messaggio)
     except ValueError:
-        # Non era una risposta a una proposta di gruppo in corso: proviamo
-        # a interpretarlo come un voto di valutazione livello (Step 04).
         try:
-            rispondi_feedback_da_whatsapp(db, numero_mittente, testo_messaggio)
-        except ValueError as errore:
-            # Nemmeno questo: non è un errore del server, es. un messaggio
-            # che non c'entra nulla. Lo logghiamo e rispondiamo comunque 200
-            # a Twilio (altrimenti riproverebbe a inviarcelo).
-            print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
+            rispondi_a_gruppo_da_whatsapp(db, numero_mittente, testo_messaggio)
+        except ValueError:
+            # Non era una risposta a una proposta di gruppo in corso: proviamo
+            # a interpretarlo come un voto di valutazione livello (Step 04).
+            try:
+                rispondi_feedback_da_whatsapp(db, numero_mittente, testo_messaggio)
+            except ValueError as errore:
+                # Nessuno dei casi precedenti: se il messaggio contiene un
+                # audio, proviamo a interpretarlo come richiesta vocale
+                # (miglioramento richiesto da un circolo, solo per utenti
+                # già verificati - la funzione stessa lo ignora altrimenti).
+                num_media = int(dati.get("NumMedia", "0") or "0")
+                tipo_media = dati.get("MediaContentType0", "")
+                indirizzo_media = dati.get("MediaUrl0", "")
+                if num_media > 0 and tipo_media.startswith("audio") and indirizzo_media:
+                    gestisci_richiesta_vocale(db, numero_mittente, indirizzo_media)
+                else:
+                    # Non è un errore del server, es. un messaggio che non
+                    # c'entra nulla. Lo logghiamo e rispondiamo comunque 200
+                    # a Twilio (altrimenti riproverebbe a inviarcelo).
+                    print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
 
     return Response(content="<Response></Response>", media_type="application/xml")
 
