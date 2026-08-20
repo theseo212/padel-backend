@@ -257,7 +257,7 @@ def invia_conferma_bozza_vocale(numero_whatsapp: str):
     dall'utente (come qui, appena dopo il suo stesso vocale) - non serve
     passare dalla trafila di approvazione già vissuta per gli altri.
     """
-    _invia(numero_whatsapp, "Confermi questa richiesta?", TEMPLATE_CONFERMA_BOZZA_VOCALE, None)
+    _invia(numero_whatsapp, "Confermi questa richiesta?", TEMPLATE_CONFERMA_BOZZA_VOCALE, {})
 
 
 def invia_link_modifica_preferenze_vocale(numero_whatsapp: str):
@@ -269,7 +269,7 @@ def invia_link_modifica_preferenze_vocale(numero_whatsapp: str):
     messaggio, bottoni "Quick Reply" e bottoni "apri sito web".
     """
     _invia(numero_whatsapp, "Se vuoi cambiare tipo partita, lato o circoli:",
-           TEMPLATE_MODIFICA_PREFERENZE_VOCALE, None)
+           TEMPLATE_MODIFICA_PREFERENZE_VOCALE, {})
 
 
 def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, tipo_partita: str = "",
