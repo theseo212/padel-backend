@@ -102,9 +102,9 @@ def gestisci_richiesta_vocale(db: Session, numero_whatsapp: str, media_url: str)
     # testo libero e template) - non è una garanzia assoluta, ma riduce
     # parecchio il rischio nella pratica.
     sleep(1)
-    invia_link_modifica_preferenze_vocale(numero_whatsapp)
+    invia_link_modifica_preferenze_vocale(numero_whatsapp, giorno=risultato['giorno'])
     sleep(1)
-    invia_conferma_bozza_vocale(numero_whatsapp)
+    invia_conferma_bozza_vocale(numero_whatsapp, giorno=risultato['giorno'], fascia_oraria=fascia_leggibile)
 
 
 def gestisci_conferma_bozza_vocale(db: Session, numero_whatsapp: str, testo_risposta: str):
