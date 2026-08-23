@@ -26,7 +26,7 @@ from app.config import (
     TEMPLATE_RICHIESTA_FEEDBACK, TEMPLATE_PROMEMORIA_FEEDBACK,
     TEMPLATE_SOSPENSIONE, TEMPLATE_PROMEMORIA_MANCATA_PARTITA,
     TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO, TEMPLATE_RICHIESTA_SCADUTA, TEMPLATE_CONFERMA_BOZZA_VOCALE,
-    TEMPLATE_MODIFICA_PREFERENZE_VOCALE,
+    TEMPLATE_MODIFICA_PREFERENZE_VOCALE, TEMPLATE_AVVISO_MESSAGGIO_NON_GESTITO,
 )
 
 _TWILIO_CONFIGURATO = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER)
@@ -295,3 +295,49 @@ def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, tipo_partita: str 
     variabili = {"1": tipo_partita, "2": giorno, "3": fascia_oraria} if tipo_partita else None
     return _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_SCADUTA, variabili,
                   etichetta_simulazione=" - RICHIESTA SCADUTA")
+
+
+def invia_messaggio_non_riconosciuto(numero_whatsapp: str):
+    """
+    Risposta automatica quando arriva un messaggio che non rientra in
+    nessuno dei flussi previsti (es. "Ciao Anna", una domanda libera,
+    ecc.) - senza questo, l'utente resterebbe nel silenzio più totale,
+    pensando magari di essere stato ignorato. È sempre una risposta
+    dentro una conversazione che l'utente ha appena aperto lui stesso,
+    quindi nessun template necessario.
+    """
+    _invia(
+        numero_whatsapp,
+        "Ciao! Sono un sistema automatico, purtroppo non posso rispondere a messaggi liberi. "
+        "Per assistenza, scrivi a info@annapadel.it",
+        None, None,
+    )
+
+
+def invia_avviso_messaggio_non_gestito_operatore(numero_mittente: str, testo_ricevuto: str):
+    """
+    Avvisa l'operatore quando arriva un messaggio non gestito da nessun
+    flusso automatico, con il numero e il testo esatto ricevuto - così
+    l'operatore sa che qualcuno ha scritto qualcosa fuori dai flussi
+    previsti, e può decidere se e come contattarlo personalmente.
+    """
+    from app.config import ADMIN_WHATSAPP_NUMERI
+
+    # WhatsApp vieta i ritorni a capo dentro una singola variabile - il
+    # testo qui lo scrive l'UTENTE, quindi non possiamo controllarlo in
+    # anticipo: sostituiamo eventuali "a capo" con uno spazio, e
+    # tronchiamo se troppo lungo (i template hanno un limite ragionevole
+    # di lunghezza per variabile).
+    testo_pulito = testo_ricevuto.replace("\n", " ").replace("\r", " ").strip()
+    if len(testo_pulito) > 200:
+        testo_pulito = testo_pulito[:200] + "..."
+    if not testo_pulito:
+        testo_pulito = "(messaggio vuoto o senza testo, es. un'immagine)"
+
+    testo_semplice = (
+        f"‼️ Messaggio non gestito da {numero_mittente}:\n\"{testo_pulito}\""
+    )
+    variabili = {"1": numero_mittente, "2": testo_pulito}
+    for numero in ADMIN_WHATSAPP_NUMERI:
+        _invia(numero, testo_semplice, TEMPLATE_AVVISO_MESSAGGIO_NON_GESTITO, variabili,
+               etichetta_simulazione=" - AVVISO MESSAGGIO NON GESTITO")
