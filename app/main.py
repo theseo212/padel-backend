@@ -25,7 +25,10 @@ from app.database import get_db, SessionLocal, engine, Base
 from app import models, schemas, config
 from app.services.bitmask import crea_bitmask, bitmask_a_fasce_leggibili
 from app.services.conversione_livello import ottieni_livello_playtomic
-from app.services.whatsapp import genera_otp, invia_otp_whatsapp, invia_riepilogo_richiesta
+from app.services.whatsapp import (
+    genera_otp, invia_otp_whatsapp, invia_riepilogo_richiesta,
+    invia_messaggio_non_riconosciuto, invia_avviso_messaggio_non_gestito_operatore,
+)
 from app.services.email_service import invia_email_contatto
 from app.matching.motore import esegui_ciclo_matching
 from app.matching.gestione_gruppi import rispondi_a_gruppo, controlla_timeout_gruppi, rispondi_a_gruppo_da_whatsapp
@@ -1033,10 +1036,15 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
                 if num_media > 0 and tipo_media.startswith("audio") and indirizzo_media:
                     gestisci_richiesta_vocale(db, numero_mittente, indirizzo_media)
                 else:
-                    # Non è un errore del server, es. un messaggio che non
-                    # c'entra nulla. Lo logghiamo e rispondiamo comunque 200
-                    # a Twilio (altrimenti riproverebbe a inviarcelo).
+                    # Non è un errore del server, es. un messaggio libero
+                    # che non c'entra con nessun flusso previsto ("Ciao
+                    # Anna", una domanda, ecc.) - senza questo, l'utente
+                    # restava nel silenzio, e l'operatore non ne sapeva
+                    # nulla. Rispondiamo comunque 200 a Twilio (altrimenti
+                    # riproverebbe a inviarcelo).
                     print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
+                    invia_messaggio_non_riconosciuto(numero_mittente)
+                    invia_avviso_messaggio_non_gestito_operatore(numero_mittente, testo_messaggio)
 
     return Response(content="<Response></Response>", media_type="application/xml")
 
