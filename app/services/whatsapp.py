@@ -60,12 +60,19 @@ def _invia(numero_whatsapp: str, testo_completo: str, content_sid: str | None, v
     """
     if _TWILIO_CONFIGURATO and content_sid and variabili is not None:
         try:
-            _client.messages.create(
-                from_=TWILIO_WHATSAPP_NUMBER,
-                to=f"whatsapp:{numero_whatsapp}",
-                content_sid=content_sid,
-                content_variables=json.dumps(variabili),
-            )
+            parametri = {
+                "from_": TWILIO_WHATSAPP_NUMBER,
+                "to": f"whatsapp:{numero_whatsapp}",
+                "content_sid": content_sid,
+            }
+            # Se il template non ha nessuna variabile (dizionario vuoto),
+            # ometti del tutto il parametro invece di mandare '{}' - alcuni
+            # template senza nessuna variabile sembrano comportarsi in modo
+            # imprevedibile (bottoni persi) quando riceve un oggetto JSON
+            # vuoto invece che nessun parametro affatto.
+            if variabili:
+                parametri["content_variables"] = json.dumps(variabili)
+            _client.messages.create(**parametri)
             return True
         except Exception as errore:
             print(f"[TWILIO][ERRORE INVIO TEMPLATE] a {numero_whatsapp}: {errore}")
@@ -248,28 +255,31 @@ def invia_messaggio_richiesta_vocale(numero_whatsapp: str, testo: str):
     _invia(numero_whatsapp, testo, None, None)
 
 
-def invia_conferma_bozza_vocale(numero_whatsapp: str):
+def invia_conferma_bozza_vocale(numero_whatsapp: str, giorno: str = "", fascia_oraria: str = ""):
     """
-    Manda i due bottoni "Confermo"/"Annulla" per la bozza vocale - un
-    template Quick Reply "solo salvato" (mai sottomesso all'approvazione
-    Meta): questi bottoni funzionano comunque, SENZA bisogno di
-    approvazione, quando restano dentro una conversazione già aperta
-    dall'utente (come qui, appena dopo il suo stesso vocale) - non serve
-    passare dalla trafila di approvazione già vissuta per gli altri.
+    Manda i due bottoni "Confermo"/"Annulla" per la bozza vocale.
+    Cita giorno e fascia oraria specifici (non un generico "confermi?"):
+    stesso principio già usato per altri template riclassificati come
+    Marketing - Meta approva come Utility solo i messaggi legati a
+    un'interazione specifica dell'utente, non un avviso generico.
     """
-    _invia(numero_whatsapp, "Confermi questa richiesta?", TEMPLATE_CONFERMA_BOZZA_VOCALE, {})
+    variabili = {"1": giorno, "2": fascia_oraria} if giorno else {}
+    _invia(numero_whatsapp, f"Ho registrato la tua richiesta vocale per il {giorno} ({fascia_oraria}). Confermi che vada bene?",
+           TEMPLATE_CONFERMA_BOZZA_VOCALE, variabili)
 
 
-def invia_link_modifica_preferenze_vocale(numero_whatsapp: str):
+def invia_link_modifica_preferenze_vocale(numero_whatsapp: str, giorno: str = ""):
     """
     Bottone che porta al form del sito, per chi vuole cambiare tipo
-    partita/lato/circoli invece di usare quelli riusati automaticamente
-    dalla richiesta più recente. In un messaggio SEPARATO da quello con
-    Confermo/Annulla: WhatsApp non permette di mescolare, nello stesso
-    messaggio, bottoni "Quick Reply" e bottoni "apri sito web".
+    partita/lato/circoli invece di usare quelli riusati automaticamente.
+    In un messaggio SEPARATO da quello con Confermo/Annulla: WhatsApp non
+    permette di mescolare, nello stesso messaggio, bottoni "Quick Reply"
+    e bottoni "apri sito web". Cita il giorno della richiesta, stesso
+    principio di specificità del template sopra.
     """
-    _invia(numero_whatsapp, "Se vuoi cambiare tipo partita, lato o circoli:",
-           TEMPLATE_MODIFICA_PREFERENZE_VOCALE, {})
+    variabili = {"1": giorno} if giorno else {}
+    _invia(numero_whatsapp, f"Per la tua richiesta del {giorno}, se vuoi cambiare tipo partita, lato o circoli:",
+           TEMPLATE_MODIFICA_PREFERENZE_VOCALE, variabili)
 
 
 def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, tipo_partita: str = "",
