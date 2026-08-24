@@ -254,6 +254,9 @@ def inizializza_database_se_necessario():
         connessione.execute(text(
             "ALTER TABLE gruppi ADD COLUMN IF NOT EXISTS numero_campo VARCHAR(20)"
         ))
+        connessione.execute(text(
+            "ALTER TABLE utenti ADD COLUMN IF NOT EXISTS provincia VARCHAR(10)"
+        ))
         connessione.commit()
 
     db = SessionLocal()
@@ -516,6 +519,18 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
     circoli = db.query(models.Circolo).filter(models.Circolo.id.in_(dati.circoli_ids)).all()
     if len(circoli) != len(dati.circoli_ids):
         raise HTTPException(status_code=400, detail="Uno o più circoli selezionati non esistono")
+
+    if utente_nuovo:
+        # Deduciamo la provincia di residenza dai circoli scelti alla
+        # prima richiesta (nessun campo esplicito nel form, per non
+        # aggiungere attrito) - se ne sceglie più di uno, vince quella più
+        # frequente tra i circoli selezionati. Fissata una volta sola,
+        # come il livello: non viene più ricalcolata alle richieste
+        # successive, anche se in futuro giocasse altrove.
+        province_scelte = [c.provincia for c in circoli if c.provincia]
+        if province_scelte:
+            provincia_piu_frequente = max(set(province_scelte), key=province_scelte.count)
+            utente.provincia = provincia_piu_frequente
 
     circoli_non_attivi = [c.nome for c in circoli if not c.attivo]
     if circoli_non_attivi:

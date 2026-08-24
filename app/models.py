@@ -32,6 +32,7 @@ class Utente(Base):
     livello_dichiarato_originale = Column(String(5))     # es. 'B2', NULL se già Playtomic
 
     lato_preferito = Column(String(15), nullable=False)  # DX, SX, INDIFFERENTE
+    provincia = Column(String(10), nullable=True)  # dedotta dai circoli scelti alla prima richiesta
 
     stato_account = Column(String(20), default="ATTIVO")  # ATTIVO, SOSPESO
     sospeso_fino_a = Column(DateTime, nullable=True)
