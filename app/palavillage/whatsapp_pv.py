@@ -19,6 +19,7 @@ from app.palavillage.config import (
     TEMPLATE_PV_RICHIESTA_ISCRIZIONE, TEMPLATE_PV_SOLLECITO_ISCRIZIONE,
     TEMPLATE_PV_GRUPPO_ASSEGNATO, TEMPLATE_PV_SEI_RISERVA, TEMPLATE_PV_PROMOZIONE_RISERVA,
     TEMPLATE_PV_RICHIESTA_PUNTEGGIO, TEMPLATE_PV_SOLLECITO_PUNTEGGIO, TEMPLATE_PV_CLASSIFICA_AGGIORNATA,
+    TEMPLATE_PV_TORNEO_ANNULLATO,
     URL_BASE_BACKEND_PUBBLICO,
 )
 
@@ -228,3 +229,14 @@ def invia_classifica_aggiornata(numero_whatsapp: str, nome: str, nome_campionato
     variabili = {"1": nome, "2": nome_campionato, "3": classifica_testo} if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PV_CLASSIFICA_AGGIORNATA, variabili,
                   etichetta_simulazione=" PALAVILLAGE - CLASSIFICA AGGIORNATA")
+
+
+def invia_torneo_annullato(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str) -> bool:
+    """Mandato solo a chi aveva già ricevuto una richiesta di iscrizione, quando l'admin cancella un torneo futuro (es. giorno festivo)."""
+    testo = (
+        f"Ciao {nome}, il torneo di {giorno_leggibile} {data_leggibile} a {NOME_CIRCOLO} è stato annullato. "
+        f"Ti aggiornerò per la prossima data disponibile."
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PV_TORNEO_ANNULLATO, variabili,
+                  etichetta_simulazione=" PALAVILLAGE - TORNEO ANNULLATO")

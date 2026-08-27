@@ -25,7 +25,7 @@ from app.palavillage.whatsapp_pv import (
     invia_gruppo_assegnato_torneo, invia_sei_riserva_torneo, invia_avviso_gruppo_incompleto,
     invia_proposta_promozione_riserva, invia_promozione_confermata, invia_sostituzione_compagno,
     invia_notifica_admin_nessuna_riserva, invia_richiesta_punteggio_torneo, invia_sollecito_punteggio_torneo,
-    invia_punteggio_non_capito, invia_punteggio_confermato, invia_classifica_aggiornata,
+    invia_punteggio_non_capito, invia_punteggio_confermato, invia_classifica_aggiornata, invia_torneo_annullato,
 )
 from app.palavillage.formazione_gruppi import Candidato, forma_gruppi, assegna_lati
 from app.palavillage.pdf_torneo import genera_pdf_torneo, _nome_campionato_leggibile
@@ -772,3 +772,48 @@ def job_finalizza_punteggi_torneo(db_pv: Session) -> int:
         elaborati += 1
 
     return elaborati
+
+
+# Stati in cui un torneo può ancora essere cancellato dall'admin - prima
+# che i gruppi vengano formati. Una volta formati i gruppi, cancellare
+# creerebbe troppa confusione (giocatori già avvisati dei compagni, PDF
+# già mandato alla segreteria) - da lì in poi non si cancella più, come
+# concordato.
+STATI_TORNEO_CANCELLABILI = {"PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"}
+
+
+def attiva_torneo(db_pv: Session, torneo_id: int) -> dict:
+    """Riattiva un torneo precedentemente cancellato (finché non sono già stati formati i gruppi)."""
+    torneo = db_pv.query(Torneo).filter(Torneo.id == torneo_id).first()
+    if torneo is None:
+        return {"ok": False, "motivo": "torneo_non_trovato"}
+    torneo.attivo = True
+    db_pv.commit()
+    return {"ok": True}
+
+
+def cancella_torneo(db_pv: Session, torneo_id: int) -> dict:
+    """
+    Cancella un torneo futuro (es. giorno festivo). Se erano già state
+    mandate richieste di iscrizione, avvisa chi le aveva ricevute. Non
+    permette di cancellare un torneo i cui gruppi sono già stati formati.
+    """
+    torneo = db_pv.query(Torneo).filter(Torneo.id == torneo_id).first()
+    if torneo is None:
+        return {"ok": False, "motivo": "torneo_non_trovato"}
+
+    if torneo.stato not in STATI_TORNEO_CANCELLABILI:
+        return {"ok": False, "motivo": "non_cancellabile_gruppi_gia_formati"}
+
+    giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+    data_leggibile = torneo.data.strftime("%d/%m")
+
+    iscrizioni_gia_contattate = db_pv.query(IscrizioneTorneo).filter(IscrizioneTorneo.torneo_id == torneo.id).all()
+    for iscrizione in iscrizioni_gia_contattate:
+        utente = db_pv.query(UtentePV).filter(UtentePV.id == iscrizione.utente_id).first()
+        if utente is not None:
+            invia_torneo_annullato(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+
+    torneo.attivo = False
+    db_pv.commit()
+    return {"ok": True, "utenti_avvisati": len(iscrizioni_gia_contattate)}
