@@ -22,6 +22,16 @@ if not PALAVILLAGE_DATABASE_URL:
         "variabile che punta alla sua connection string."
     )
 
+# Railway fornisce di default una stringa "postgresql://...", che
+# SQLAlchemy interpreta usando psycopg2 se non specificato altrimenti.
+# Questo progetto usa però psycopg (versione 3, vedi requirements.txt),
+# quindi normalizziamo lo schema qui invece di dover ricordare di
+# modificare a mano il valore incollato su Railway.
+if PALAVILLAGE_DATABASE_URL.startswith("postgresql://"):
+    PALAVILLAGE_DATABASE_URL = PALAVILLAGE_DATABASE_URL.replace(
+        "postgresql://", "postgresql+psycopg://", 1
+    )
+
 engine_pv = create_engine(PALAVILLAGE_DATABASE_URL)
 
 SessionLocalPV = sessionmaker(autocommit=False, autoflush=False, bind=engine_pv)
