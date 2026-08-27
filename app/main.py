@@ -38,6 +38,7 @@ from app.matching.richiesta_vocale import (
 from app.matching.prenotazione import conferma_prenotazione, fallisce_prenotazione
 from app.palavillage.database import get_db_pv
 from app.palavillage.routing import gestisci_webhook_palavillage
+from app.palavillage import schemas as palavillage_schemas
 from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
     controlla_partite_da_segnare_automaticamente, rispondi_feedback_da_whatsapp,
@@ -392,6 +393,59 @@ def health_check_database(db: Session = Depends(get_db)):
     """
     risultato = db.execute(text("SELECT 1")).scalar()
     return {"database_collegato": risultato == 1}
+
+
+@app.get("/palavillage/utenti/profilo")
+def profilo_utente_palavillage(whatsapp_numero: str, db_pv: Session = Depends(get_db_pv)):
+    """
+    Equivalente di /utenti/profilo ma per Palavillage: cerca l'utente nel
+    SUO database (non in quello generico) per riconoscerlo nel form.
+    """
+    from app.palavillage.servizio_iscrizione import profilo_pv
+    return profilo_pv(db_pv, whatsapp_numero)
+
+
+@app.post("/palavillage/iscrizione", response_model=palavillage_schemas.IscrizionePVResponse)
+def crea_iscrizione_palavillage(
+    dati: palavillage_schemas.IscrizionePVCreate,
+    db_pv: Session = Depends(get_db_pv),
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint del form pubblico di Palavillage. A differenza di
+    /richieste (sistema generico), qui non c'è "una richiesta per
+    giorno": si registrano semplicemente le mattine settimanali in cui
+    si vuole giocare, sempre modificabili.
+
+    Se il numero risulta già validato sul sistema generico AnnaPadel
+    (stesso numero, stessa Anna), l'OTP viene saltato qui.
+    """
+    from app.palavillage.servizio_iscrizione import gestisci_iscrizione
+
+    try:
+        risultato = gestisci_iscrizione(db_pv, db, dati)
+    except ValueError as errore:
+        raise HTTPException(status_code=400, detail=str(errore))
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="Il servizio WhatsApp è temporaneamente al completo (troppe nuove "
+                   "richieste oggi). Riprova tra qualche ora."
+        )
+    return palavillage_schemas.IscrizionePVResponse(**risultato)
+
+
+@app.post("/palavillage/iscrizione/valida-otp")
+def valida_otp_palavillage(dati: palavillage_schemas.ValidaOtpPVRequest, db_pv: Session = Depends(get_db_pv)):
+    """Equivalente di /richieste/valida-otp ma per Palavillage."""
+    from app.palavillage.servizio_iscrizione import valida_otp_pv
+
+    try:
+        return valida_otp_pv(db_pv, dati.whatsapp_numero, dati.codice_otp)
+    except LookupError as errore:
+        raise HTTPException(status_code=404, detail=str(errore))
+    except ValueError as errore:
+        raise HTTPException(status_code=400, detail=str(errore))
 
 
 @app.get("/utenti/profilo")
