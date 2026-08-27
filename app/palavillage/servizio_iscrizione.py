@@ -47,22 +47,45 @@ def _numero_gia_verificato_nel_generico(db_generico: Session, whatsapp_numero: s
     return bool(utente_generico and utente_generico.whatsapp_validato)
 
 
-def profilo_pv(db_pv: Session, whatsapp_numero: str) -> dict:
-    """Mirror di /utenti/profilo del sistema generico, per il riconoscimento nel form."""
+def profilo_pv(db_pv: Session, db_generico: Session, whatsapp_numero: str) -> dict:
+    """
+    Mirror di /utenti/profilo del sistema generico, per il riconoscimento
+    nel form. Prima cerca nel database di Palavillage (match completo,
+    incluse le preferenze già scelte lì). Se non lo trova, cerca anche
+    nel database generico AnnaPadel: se il numero è già conosciuto e
+    validato lì, restituisce comunque nome/cognome/livello per
+    precompilare il form (stessa Anna, stessa logica di fiducia già
+    usata per l'OTP) - ma senza lato/giorni, che sono specifici di
+    Palavillage e vanno comunque scelti la prima volta qui.
+    """
     utente = db_pv.query(UtentePV).filter(UtentePV.whatsapp_numero == whatsapp_numero).first()
-    if utente is None:
-        return {"esiste": False}
+    if utente is not None:
+        return {
+            "esiste": True,
+            "nome": utente.nome,
+            "cognome": utente.cognome,
+            "livello_playtomic": float(utente.livello_playtomic),
+            "livello_dichiarato_scala": utente.livello_dichiarato_scala,
+            "livello_dichiarato_originale": utente.livello_dichiarato_originale,
+            "lato_preferito": utente.lato_preferito,
+            "giorni": giorni_bitmask_a_lista(utente.giorni_bitmask),
+        }
 
-    return {
-        "esiste": True,
-        "nome": utente.nome,
-        "cognome": utente.cognome,
-        "livello_playtomic": float(utente.livello_playtomic),
-        "livello_dichiarato_scala": utente.livello_dichiarato_scala,
-        "livello_dichiarato_originale": utente.livello_dichiarato_originale,
-        "lato_preferito": utente.lato_preferito,
-        "giorni": giorni_bitmask_a_lista(utente.giorni_bitmask),
-    }
+    utente_generico = db_generico.query(models_generico.Utente).filter(
+        models_generico.Utente.whatsapp_numero == whatsapp_numero
+    ).first()
+    if utente_generico is not None and utente_generico.whatsapp_validato:
+        return {
+            "esiste": False,
+            "trovato_nel_generico": True,
+            "nome": utente_generico.nome,
+            "cognome": utente_generico.cognome,
+            "livello_playtomic": float(utente_generico.livello_playtomic),
+            "livello_dichiarato_scala": utente_generico.livello_dichiarato_scala,
+            "livello_dichiarato_originale": utente_generico.livello_dichiarato_originale,
+        }
+
+    return {"esiste": False, "trovato_nel_generico": False}
 
 
 def gestisci_iscrizione(db_pv: Session, db_generico: Session, dati: IscrizionePVCreate) -> dict:
