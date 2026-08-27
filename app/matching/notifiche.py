@@ -5,8 +5,9 @@ e li invia a ciascuno dei 4 giocatori coinvolti.
 
 import secrets
 from datetime import datetime
-from app import config
+from app import config, models
 from app.config import ORA_INIZIO_GIORNATA, DURATA_SLOT_MINUTI
+from app.services.bitmask import bitmask_a_fasce_leggibili
 from app.services.whatsapp import (
     invia_proposta_gruppo, invia_annullamento_gruppo, invia_gruppo_confermato,
     invia_notifica_operatore, invia_richiesta_prenotazione_circolo,
@@ -92,9 +93,17 @@ def notifica_gruppo_confermato(membri, gruppo, circolo, db):
     # se il JSON è valido) - quindi separiamo i 4 giocatori con " - "
     # invece di un vero a capo, restando su un'unica variabile (evitiamo
     # così di dover cambiare la struttura del template già approvato).
-    elenco_giocatori = " - ".join(
-        f"{m.utente.nome} {m.utente.cognome}: {m.utente.whatsapp_numero}" for m in membri
-    )
+    # Recuperiamo per ciascuno anche la fascia oraria dichiarata nella sua
+    # richiesta originale, utile alla segreteria per un eventuale piccolo
+    # spostamento d'orario (sanno subito chi ha più margine).
+    pezzi_giocatori = []
+    for m in membri:
+        richiesta = db.query(models.Richiesta).filter(models.Richiesta.id == m.richiesta_id).first()
+        fascia = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask)) if richiesta else "?"
+        pezzi_giocatori.append(
+            f"{m.utente.nome} {m.utente.cognome}: {m.utente.whatsapp_numero} (disp. {fascia})"
+        )
+    elenco_giocatori = " - ".join(pezzi_giocatori)
     testo_prenotazione = (
         f"‼️ Nuovo gruppo pronto per la prenotazione!\n"
         f"Circolo: {circolo.nome}\n"
