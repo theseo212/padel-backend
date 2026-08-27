@@ -111,6 +111,45 @@ def job_matching_periodico():
         db.close()
 
 
+def job_palavillage_genera_tornei_futuri():
+    """Assicura che esistano i tornei per i prossimi giorni (vedi motore_torneo.py)."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import genera_tornei_futuri
+    db_pv = SessionLocalPV()
+    try:
+        n = genera_tornei_futuri(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][TORNEI] Creati {n} nuovi tornei futuri.")
+    finally:
+        db_pv.close()
+
+
+def job_palavillage_richieste_iscrizione():
+    """T-6gg: manda la richiesta di iscrizione ai tornei che raggiungono la soglia."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import job_invia_richieste_iscrizione
+    db_pv = SessionLocalPV()
+    try:
+        n = job_invia_richieste_iscrizione(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][RICHIESTE] Elaborati {n} tornei.")
+    finally:
+        db_pv.close()
+
+
+def job_palavillage_solleciti_iscrizione():
+    """T-3gg: manda un sollecito a chi non ha ancora risposto."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import job_invia_solleciti_iscrizione
+    db_pv = SessionLocalPV()
+    try:
+        n = job_invia_solleciti_iscrizione(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][SOLLECITI] Elaborati {n} tornei.")
+    finally:
+        db_pv.close()
+
+
 def job_controllo_timeout():
     """Funzione eseguita automaticamente ogni minuto, per chiudere le proposte scadute."""
     db = SessionLocal()
@@ -324,6 +363,24 @@ def avvia_scheduler():
         minutes=5,
         id="bozze_vocali_scadute",
     )
+    scheduler.add_job(
+        job_palavillage_genera_tornei_futuri,
+        "interval",
+        hours=1,
+        id="palavillage_genera_tornei_futuri",
+    )
+    scheduler.add_job(
+        job_palavillage_richieste_iscrizione,
+        "interval",
+        minutes=15,
+        id="palavillage_richieste_iscrizione",
+    )
+    scheduler.add_job(
+        job_palavillage_solleciti_iscrizione,
+        "interval",
+        minutes=15,
+        id="palavillage_solleciti_iscrizione",
+    )
     scheduler.start()
 
 
@@ -382,7 +439,17 @@ def crea_tabelle_palavillage():
     from app.palavillage import models as _modelli_pv  # noqa: F401 (registra le tabelle)
 
     BasePV.metadata.create_all(bind=engine_pv)
-    return {"ok": True, "messaggio": "Tabelle Palavillage create (o già esistenti)."}
+
+    # Migrazione idempotente per chi aveva già creato le tabelle prima
+    # dell'aggiunta di questa colonna (stesso pattern usato dal sistema
+    # generico in inizializza_database_se_necessario).
+    with engine_pv.connect() as connessione:
+        connessione.execute(text(
+            "ALTER TABLE iscrizioni_torneo ADD COLUMN IF NOT EXISTS codice_risposta VARCHAR(20)"
+        ))
+        connessione.commit()
+
+    return {"ok": True, "messaggio": "Tabelle Palavillage create/aggiornate (o già a posto)."}
 
 
 @app.get("/health/db")
@@ -447,6 +514,103 @@ def valida_otp_palavillage(dati: palavillage_schemas.ValidaOtpPVRequest, db_pv: 
         raise HTTPException(status_code=404, detail=str(errore))
     except ValueError as errore:
         raise HTTPException(status_code=400, detail=str(errore))
+
+
+def _carica_iscrizione_pv_da_token(token: str, db_pv: Session):
+    """
+    Stesso schema di _carica_gruppo_da_token (sistema generico): divide
+    il token in id + codice casuale, verifica che corrispondano - fa da
+    chiave d'accesso al posto di una password, dato che questa pagina
+    la apre l'utente direttamente da un link WhatsApp, senza login.
+    """
+    from app.palavillage.models import IscrizioneTorneo, Torneo, UtentePV
+    try:
+        iscrizione_id_str, codice = token.rsplit(".", 1)
+        iscrizione_id = int(iscrizione_id_str)
+    except (ValueError, IndexError):
+        return None, None, None
+
+    iscrizione = db_pv.query(IscrizioneTorneo).filter(IscrizioneTorneo.id == iscrizione_id).first()
+    if iscrizione is None or iscrizione.codice_risposta != codice:
+        return None, None, None
+
+    torneo = db_pv.query(Torneo).filter(Torneo.id == iscrizione.torneo_id).first()
+    utente = db_pv.query(UtentePV).filter(UtentePV.id == iscrizione.utente_id).first()
+    return iscrizione, torneo, utente
+
+
+@app.get("/palavillage/rispondi/{token}")
+def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(get_db_pv)):
+    """
+    Pagina pubblica (nessuna credenziale, come /circolo/conferma/{token})
+    raggiungibile dal link mandato su WhatsApp: permette di confermare o
+    rifiutare la partecipazione a un torneo specifico.
+    """
+    iscrizione, torneo, utente = _carica_iscrizione_pv_da_token(token, db_pv)
+    if iscrizione is None:
+        return _pagina_conferma_circolo_html(
+            "Link non valido",
+            "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
+        )
+
+    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"][torneo.giorno_settimana]
+    data_leggibile = torneo.data.strftime("%d/%m/%Y")
+
+    if iscrizione.stato_risposta != "IN_ATTESA":
+        esito_leggibile = "confermata la partecipazione" if iscrizione.stato_risposta == "CONFERMATO" else "segnalata l'assenza"
+        return _pagina_conferma_circolo_html(
+            "Già risposto",
+            f"<p class='esito ok'>✅ Hai già {esito_leggibile} per il torneo di {giorno_leggibile} {data_leggibile}, non c'è più nulla da fare qui.</p>",
+        )
+
+    corpo = f"""
+        <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
+        <p class="dettaglio"><strong>Circolo:</strong> Palavillage</p>
+        <form method="POST" action="/palavillage/rispondi/{token}">
+            <button type="submit" name="azione" value="conferma" class="btn-conferma">Confermo, ci sarò</button>
+            <button type="submit" name="azione" value="rifiuto" class="btn-fallita">Non posso venire</button>
+        </form>
+    """
+    return _pagina_conferma_circolo_html(f"Torneo di {giorno_leggibile}", corpo)
+
+
+@app.post("/palavillage/rispondi/{token}")
+async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request, db_pv: Session = Depends(get_db_pv)):
+    from app.palavillage.motore_torneo import gestisci_risposta_bottone_iscrizione
+
+    iscrizione, torneo, utente = _carica_iscrizione_pv_da_token(token, db_pv)
+    if iscrizione is None:
+        return _pagina_conferma_circolo_html(
+            "Link non valido",
+            "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
+        )
+
+    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"][torneo.giorno_settimana]
+    data_leggibile = torneo.data.strftime("%d/%m/%Y")
+
+    if iscrizione.stato_risposta != "IN_ATTESA":
+        esito_leggibile = "confermata la partecipazione" if iscrizione.stato_risposta == "CONFERMATO" else "segnalata l'assenza"
+        return _pagina_conferma_circolo_html(
+            "Già risposto",
+            f"<p class='esito ok'>✅ Hai già {esito_leggibile} per il torneo di {giorno_leggibile} {data_leggibile} (magari da un altro dispositivo), non c'è più nulla da fare qui.</p>",
+        )
+
+    corpo_form = await request.form()
+    azione = corpo_form.get("azione")
+    confermato = azione == "conferma"
+
+    risultato = gestisci_risposta_bottone_iscrizione(db_pv, iscrizione.id, confermato=confermato)
+    if not risultato.get("gestito"):
+        return _pagina_conferma_circolo_html(
+            "Non gestito",
+            "<p class='esito errore'>Non sono riuscito a registrare la tua risposta, riprova tra poco.</p>",
+        )
+
+    if confermato:
+        corpo = f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! Ti scriverò con i dettagli del gruppo.</p>"
+    else:
+        corpo = f"<p class='esito ok'>Ok, ho segnato che non ci sarai {giorno_leggibile} {data_leggibile}. A presto!</p>"
+    return _pagina_conferma_circolo_html("Risposta registrata", corpo)
 
 
 @app.get("/utenti/profilo")
