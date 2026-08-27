@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Pannello Palavillage — AnnaPadel</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin-top: 32px; color: #333; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    nav.menu-admin {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0 20px;
+        flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none;
+        color: #444;
+        background: white;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-top: 8px;
+    }
+    th, td {
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 1px solid #eee;
+        font-size: 14px;
+        vertical-align: top;
+    }
+    th { background: #fafafa; color: #555; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    tr.torneo-non-attivo td { opacity: 0.5; }
+    .vuoto { color: #999; font-style: italic; padding: 14px; }
+    button {
+        border: none;
+        border-radius: 6px;
+        padding: 7px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        margin-right: 6px;
+        font-weight: 500;
+    }
+    .btn-rosso { background: #fbdcdc; color: #a3231f; }
+    .btn-rosso:hover { background: #f7c4c4; }
+    .btn-blu { background: #dbeafe; color: #1d4ed8; }
+    .btn-blu:hover { background: #c3ddfd; }
+    .btn-verde { background: #d5f2df; color: #1a7a3a; }
+    .btn-verde:hover { background: #bfe9cf; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .messaggio {
+        margin-top: 10px; padding: 8px 12px; border-radius: 6px;
+        font-size: 13px; display: none;
+    }
+    .messaggio.ok { background: #d5f2df; color: #1a7a3a; }
+    .messaggio.errore { background: #fbdcdc; color: #a3231f; }
+    .badge-stato {
+        display: inline-block; padding: 3px 9px; border-radius: 999px;
+        font-size: 12px; font-weight: 600; white-space: nowrap;
+    }
+    .badge-programmato { background: #eef0f3; color: #555; }
+    .badge-inviato { background: #fef3c7; color: #92400e; }
+    .badge-gruppi { background: #dbeafe; color: #1d4ed8; }
+    .badge-terminato { background: #d5f2df; color: #1a7a3a; }
+    .badge-attesa { background: #ffe4d6; color: #c2410c; }
+    .badge-vacanza { background: #fbdcdc; color: #a3231f; margin-left: 6px; }
+    .riga-campionato-nome { display: flex; gap: 6px; align-items: center; }
+    .riga-campionato-nome input {
+        padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; flex: 1 1 180px;
+    }
+    #classifica-espansa {
+        margin-top: 10px; background: white; border-radius: 8px; padding: 14px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: none;
+    }
+    #classifica-espansa ol { margin: 8px 0 0; padding-left: 22px; }
+    #classifica-espansa li { padding: 3px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>🎾 Pannello Palavillage</h1>
+<p class="sottotitolo">Gestione tornei del mattino e campionati — stessa Anna, un solo circolo</p>
+
+<nav class="menu-admin">
+    <a href="/admin">← AnnaPadel generico</a>
+    <a href="/admin/palavillage" class="attivo">Palavillage</a>
+</nav>
+
+<h2>Tornei</h2>
+<p class="sottotitolo">Dal giorno corrente in poi (più gli ultimi 7 giorni passati, per riferimento). Un torneo è cancellabile solo prima che i gruppi vengano formati.</p>
+<div id="msg-tornei" class="messaggio"></div>
+<div id="tabella-tornei"><p class="vuoto">Caricamento…</p></div>
+
+<h2>Campionati</h2>
+<p class="sottotitolo">Un'edizione per giorno della settimana. Chiudendo un'edizione, la prossima generazione tornei ne apre automaticamente una nuova.</p>
+<div id="msg-campionati" class="messaggio"></div>
+<div id="tabella-campionati"><p class="vuoto">Caricamento…</p></div>
+
+<div id="classifica-espansa">
+    <strong id="classifica-titolo"></strong>
+    <ol id="classifica-lista"></ol>
+    <button class="btn-rosso" onclick="chiudiClassificaEspansa()" style="margin-top:10px;">Chiudi</button>
+</div>
+
+<script>
+const NOMI_STATO_BADGE = {
+    'PROGRAMMATO': 'badge-programmato',
+    'RICHIESTE_INVIATE': 'badge-inviato',
+    'SOLLECITO_INVIATO': 'badge-inviato',
+    'GRUPPI_FORMATI': 'badge-gruppi',
+    'PDF_INVIATI': 'badge-gruppi',
+    'RICHIESTA_PUNTEGGIO_INVIATA': 'badge-attesa',
+    'TERMINATO': 'badge-terminato',
+    'ANNULLATO': 'badge-programmato',
+};
+
+function mostraMessaggio(idContenitore, testo, tipo) {
+    const el = document.getElementById(idContenitore);
+    el.textContent = testo;
+    el.className = `messaggio ${tipo}`;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+function formattaData(isoData) {
+    const d = new Date(isoData + 'T00:00:00');
+    return d.toLocaleDateString('it-IT', { weekday: undefined, day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+async function caricaTornei() {
+    try {
+        const risposta = await fetch('/admin/palavillage/tornei');
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const tornei = await risposta.json();
+        renderizzaTabellaTornei(tornei);
+    } catch (e) {
+        document.getElementById('tabella-tornei').innerHTML = `<p class="vuoto">Errore nel caricare i tornei: ${e.message}</p>`;
+    }
+}
+
+function renderizzaTabellaTornei(tornei) {
+    const contenitore = document.getElementById('tabella-tornei');
+    if (tornei.length === 0) {
+        contenitore.innerHTML = '<p class="vuoto">Nessun torneo trovato.</p>';
+        return;
+    }
+    const righe = tornei.map(t => {
+        const classeBadge = NOMI_STATO_BADGE[t.stato] || 'badge-programmato';
+        const badgeVacanza = t.vacanza_senza_riserve
+            ? '<span class="badge-stato badge-vacanza">⚠️ posto vacante</span>' : '';
+        const bottoneAzione = t.attivo
+            ? (t.cancellabile
+                ? `<button class="btn-rosso" onclick="cancellaTorneo(${t.id})">Cancella</button>`
+                : `<button class="btn-rosso" disabled title="Gruppi già formati, non più cancellabile">Cancella</button>`)
+            : `<button class="btn-verde" onclick="attivaTorneo(${t.id})">Riattiva</button>`;
+        return `
+            <tr class="${t.attivo ? '' : 'torneo-non-attivo'}">
+                <td><strong>${t.giorno_leggibile}</strong> ${formattaData(t.data)}<br><span style="color:#888; font-size:12px;">${t.campionato_nome || ''}</span></td>
+                <td><span class="badge-stato ${classeBadge}">${t.stato_leggibile}</span>${badgeVacanza}</td>
+                <td>${t.numero_confermati}</td>
+                <td>${bottoneAzione}</td>
+            </tr>`;
+    }).join('');
+
+    contenitore.innerHTML = `
+        <table>
+            <thead><tr><th>Data e giorno</th><th>Stato</th><th>Confermati</th><th>Azioni</th></tr></thead>
+            <tbody>${righe}</tbody>
+        </table>`;
+}
+
+async function attivaTorneo(id) {
+    try {
+        const risposta = await fetch(`/admin/palavillage/tornei/${id}/attiva`, { method: 'POST' });
+        if (!risposta.ok) throw new Error((await risposta.json()).detail || 'Errore');
+        mostraMessaggio('msg-tornei', 'Torneo riattivato.', 'ok');
+        caricaTornei();
+    } catch (e) {
+        mostraMessaggio('msg-tornei', e.message, 'errore');
+    }
+}
+
+async function cancellaTorneo(id) {
+    if (!confirm('Cancellare questo torneo? Se erano già state mandate richieste di iscrizione, i giocatori coinvolti verranno avvisati su WhatsApp.')) return;
+    try {
+        const risposta = await fetch(`/admin/palavillage/tornei/${id}/cancella`, { method: 'POST' });
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.detail || 'Errore');
+        mostraMessaggio('msg-tornei', `Torneo cancellato. Utenti avvisati: ${dati.utenti_avvisati}.`, 'ok');
+        caricaTornei();
+    } catch (e) {
+        mostraMessaggio('msg-tornei', e.message, 'errore');
+    }
+}
+
+const NOMI_GIORNI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì'];
+
+async function caricaCampionati() {
+    try {
+        const risposta = await fetch('/admin/palavillage/campionati');
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const campionati = await risposta.json();
+        renderizzaTabellaCampionati(campionati);
+    } catch (e) {
+        document.getElementById('tabella-campionati').innerHTML = `<p class="vuoto">Errore nel caricare i campionati: ${e.message}</p>`;
+    }
+}
+
+function renderizzaTabellaCampionati(campionati) {
+    const contenitore = document.getElementById('tabella-campionati');
+    if (campionati.length === 0) {
+        contenitore.innerHTML = '<p class="vuoto">Nessun campionato ancora creato (verranno creati automaticamente dal primo torneo generato).</p>';
+        return;
+    }
+    const righe = campionati.map(c => {
+        const classeBadge = c.stato === 'APERTO' ? 'badge-terminato' : 'badge-programmato';
+        return `
+            <tr>
+                <td>${NOMI_GIORNI[c.giorno_settimana]} — edizione #${c.numero_edizione}</td>
+                <td>
+                    <div class="riga-campionato-nome">
+                        <input type="text" id="nome-campionato-${c.id}" value="${c.nome || ''}" placeholder="${c.nome_visualizzato}">
+                        <button class="btn-blu" onclick="salvaNomeCampionato(${c.id})">Salva</button>
+                    </div>
+                </td>
+                <td><span class="badge-stato ${classeBadge}">${c.stato}</span></td>
+                <td>
+                    <button class="btn-blu" onclick="vediClassifica(${c.id}, '${c.nome_visualizzato}')">Classifica</button>
+                    ${c.stato === 'APERTO' ? `<button class="btn-rosso" onclick="chiudiCampionato(${c.id})">Chiudi edizione</button>` : ''}
+                </td>
+            </tr>`;
+    }).join('');
+
+    contenitore.innerHTML = `
+        <table>
+            <thead><tr><th>Campionato</th><th>Nome personalizzato</th><th>Stato</th><th>Azioni</th></tr></thead>
+            <tbody>${righe}</tbody>
+        </table>`;
+}
+
+async function salvaNomeCampionato(id) {
+    const nuovoNome = document.getElementById(`nome-campionato-${id}`).value.trim();
+    try {
+        const risposta = await fetch(`/admin/palavillage/campionati/${id}/nome`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nome: nuovoNome }),
+        });
+        if (!risposta.ok) throw new Error('Errore nel salvataggio');
+        mostraMessaggio('msg-campionati', 'Nome aggiornato.', 'ok');
+        caricaCampionati();
+    } catch (e) {
+        mostraMessaggio('msg-campionati', e.message, 'errore');
+    }
+}
+
+async function vediClassifica(id, nomeCampionato) {
+    try {
+        const risposta = await fetch(`/admin/palavillage/campionati/${id}/classifica`);
+        if (!risposta.ok) throw new Error('Errore nel caricare la classifica');
+        const dati = await risposta.json();
+        document.getElementById('classifica-titolo').textContent = `Classifica — ${nomeCampionato}`;
+        const lista = document.getElementById('classifica-lista');
+        if (dati.classifica.length === 0) {
+            lista.innerHTML = '<p class="vuoto">Nessun punteggio ancora registrato.</p>';
+        } else {
+            lista.innerHTML = dati.classifica.map(v =>
+                `<li>${v.cognome} ${v.nome} — ${v.punti_totali} punti (${v.partite_giocate} partite)</li>`
+            ).join('');
+        }
+        document.getElementById('classifica-espansa').style.display = 'block';
+        document.getElementById('classifica-espansa').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+        mostraMessaggio('msg-campionati', e.message, 'errore');
+    }
+}
+
+function chiudiClassificaEspansa() {
+    document.getElementById('classifica-espansa').style.display = 'none';
+}
+
+async function chiudiCampionato(id) {
+    if (!confirm('Chiudere questa edizione del campionato? Verrà registrato il vincitore attuale e, al prossimo torneo generato per questo giorno, se ne aprirà automaticamente una nuova.')) return;
+    try {
+        const risposta = await fetch(`/admin/palavillage/campionati/${id}/chiudi`, { method: 'POST' });
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.detail || 'Errore');
+        mostraMessaggio('msg-campionati', 'Campionato chiuso.', 'ok');
+        caricaCampionati();
+    } catch (e) {
+        mostraMessaggio('msg-campionati', e.message, 'errore');
+    }
+}
+
+caricaTornei();
+caricaCampionati();
+</script>
+
+</body>
+</html>
