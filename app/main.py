@@ -675,6 +675,101 @@ def chiudi_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(g
     }
 
 
+@app.get("/admin/palavillage/tornei", dependencies=[Depends(verifica_credenziali_admin)])
+def elenca_tornei_palavillage(db_pv: Session = Depends(get_db_pv)):
+    """
+    Elenco dei tornei (passati recenti + tutti i futuri già generati),
+    per il pannello admin: data/giorno, stato, numero di confermati,
+    ed eventuali gruppi con un posto vacante (nessuna riserva trovata).
+    """
+    from app.palavillage.models import Torneo, IscrizioneTorneo, Campionato, GruppoPV, GruppoMembroPV
+    from app.palavillage.pdf_torneo import _nome_campionato_leggibile
+    from datetime import date as _date, timedelta as _timedelta
+
+    oggi = _date.today()
+    tornei = (
+        db_pv.query(Torneo)
+        .filter(Torneo.data >= oggi - _timedelta(days=7))
+        .order_by(Torneo.data)
+        .all()
+    )
+
+    nomi_giorni = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]
+    etichette_stato = {
+        "PROGRAMMATO": "Programmato",
+        "RICHIESTE_INVIATE": "Richieste inviate",
+        "SOLLECITO_INVIATO": "Sollecito inviato",
+        "GRUPPI_FORMATI": "Gruppi formati",
+        "PDF_INVIATI": "PDF inviati alla segreteria",
+        "RICHIESTA_PUNTEGGIO_INVIATA": "In attesa punteggi",
+        "TERMINATO": "Terminato",
+        "ANNULLATO": "Annullato",
+    }
+
+    risultato = []
+    for torneo in tornei:
+        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        numero_confermati = (
+            db_pv.query(IscrizioneTorneo)
+            .filter(IscrizioneTorneo.torneo_id == torneo.id, IscrizioneTorneo.stato_risposta == "CONFERMATO")
+            .count()
+        )
+
+        gruppi = db_pv.query(GruppoPV).filter(GruppoPV.torneo_id == torneo.id).all()
+        vacanza = False
+        for gruppo in gruppi:
+            n_membri = db_pv.query(GruppoMembroPV).filter(GruppoMembroPV.gruppo_id == gruppo.id).count()
+            if n_membri < 4:
+                vacanza = True
+                break
+
+        risultato.append({
+            "id": torneo.id,
+            "data": torneo.data.isoformat(),
+            "giorno_leggibile": nomi_giorni[torneo.giorno_settimana],
+            "stato": torneo.stato,
+            "stato_leggibile": etichette_stato.get(torneo.stato, torneo.stato),
+            "numero_confermati": numero_confermati,
+            "attivo": torneo.attivo,
+            "cancellabile": torneo.stato in {"PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"} and torneo.attivo,
+            "vacanza_senza_riserve": vacanza,
+            "campionato_nome": _nome_campionato_leggibile(campionato) if campionato else None,
+        })
+
+    return risultato
+
+
+@app.post("/admin/palavillage/tornei/{torneo_id}/attiva", dependencies=[Depends(verifica_credenziali_admin)])
+def attiva_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
+    from app.palavillage.motore_torneo import attiva_torneo
+    risultato = attiva_torneo(db_pv, torneo_id)
+    if not risultato.get("ok"):
+        raise HTTPException(status_code=404, detail=risultato.get("motivo"))
+    return risultato
+
+
+@app.post("/admin/palavillage/tornei/{torneo_id}/cancella", dependencies=[Depends(verifica_credenziali_admin)])
+def cancella_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
+    from app.palavillage.motore_torneo import cancella_torneo
+    risultato = cancella_torneo(db_pv, torneo_id)
+    if not risultato.get("ok"):
+        motivo = risultato.get("motivo")
+        messaggio = (
+            "Questo torneo ha già i gruppi formati: non è più cancellabile."
+            if motivo == "non_cancellabile_gruppi_gia_formati" else "Torneo non trovato"
+        )
+        raise HTTPException(status_code=400, detail=messaggio)
+    return risultato
+
+
+@app.get("/admin/palavillage", dependencies=[Depends(verifica_credenziali_admin)])
+def pagina_admin_palavillage():
+    """Serve la pagina web del pannello admin Palavillage."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_palavillage.html")
+    return FileResponse(percorso)
+
+
 @app.get("/health/db")
 def health_check_database(db: Session = Depends(get_db)):
     """
