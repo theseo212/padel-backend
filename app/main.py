@@ -150,6 +150,19 @@ def job_palavillage_solleciti_iscrizione():
         db_pv.close()
 
 
+def job_palavillage_forma_gruppi():
+    """T-12h: chiude le iscrizioni e forma i gruppi da 4."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import job_forma_gruppi_torneo
+    db_pv = SessionLocalPV()
+    try:
+        n = job_forma_gruppi_torneo(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][GRUPPI] Formati i gruppi per {n} tornei.")
+    finally:
+        db_pv.close()
+
+
 def job_controllo_timeout():
     """Funzione eseguita automaticamente ogni minuto, per chiudere le proposte scadute."""
     db = SessionLocal()
@@ -380,6 +393,12 @@ def avvia_scheduler():
         "interval",
         minutes=15,
         id="palavillage_solleciti_iscrizione",
+    )
+    scheduler.add_job(
+        job_palavillage_forma_gruppi,
+        "interval",
+        minutes=15,
+        id="palavillage_forma_gruppi",
     )
     scheduler.start()
 
