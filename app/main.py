@@ -36,6 +36,8 @@ from app.matching.richiesta_vocale import (
     gestisci_richiesta_vocale, gestisci_conferma_bozza_vocale, controlla_bozze_vocali_scadute,
 )
 from app.matching.prenotazione import conferma_prenotazione, fallisce_prenotazione
+from app.palavillage.database import get_db_pv
+from app.palavillage.routing import gestisci_webhook_palavillage
 from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
     controlla_partite_da_segnare_automaticamente, rispondi_feedback_da_whatsapp,
@@ -988,7 +990,7 @@ def rispondi_a_proposta(gruppo_id: int, dati: schemas.RispostaGruppo, db: Sessio
 
 
 @app.post("/webhooks/twilio/incoming")
-async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db)):
+async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db), db_pv: Session = Depends(get_db_pv)):
     """
     Riceve i messaggi in arrivo su WhatsApp (es. quando un utente preme
     il bottone Conferma o Rifiuta su una proposta di partita). Va
@@ -1000,6 +1002,13 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
     potrebbe inviare risposte false a nome di un utente). La verifica
     viene saltata solo se TWILIO_AUTH_TOKEN non è configurato (utile per
     testare l'endpoint in locale senza credenziali reali).
+
+    Stesso numero, due sistemi: prima di qualunque cosa, si controlla se
+    il messaggio è di competenza di Palavillage (bottone con payload
+    prefissato, o testo libero con un contesto Palavillage attivo). Se
+    sì, viene gestito lì e la funzione si ferma. Altrimenti prosegue
+    ESATTAMENTE come prima, senza alcuna modifica al comportamento
+    generico esistente.
     """
     corpo_form = await request.form()
     dati = dict(corpo_form)
@@ -1025,6 +1034,9 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
 
     numero_mittente = dati.get("From", "").replace("whatsapp:", "")
     testo_messaggio = dati.get("Body", "")
+
+    if gestisci_webhook_palavillage(db_pv, numero_mittente, dati):
+        return Response(content="<Response></Response>", media_type="application/xml")
 
     try:
         # Controllata per PRIMA: se l'utente ha una bozza vocale in
