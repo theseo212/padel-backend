@@ -18,6 +18,7 @@ from app.palavillage.config import (
     NOME_CIRCOLO, FIRMA_MESSAGGIO, TEMPLATE_PV_RIEPILOGO_ISCRIZIONE,
     TEMPLATE_PV_RICHIESTA_ISCRIZIONE, TEMPLATE_PV_SOLLECITO_ISCRIZIONE,
     TEMPLATE_PV_GRUPPO_ASSEGNATO, TEMPLATE_PV_SEI_RISERVA, TEMPLATE_PV_PROMOZIONE_RISERVA,
+    TEMPLATE_PV_RICHIESTA_PUNTEGGIO, TEMPLATE_PV_SOLLECITO_PUNTEGGIO, TEMPLATE_PV_CLASSIFICA_AGGIORNATA,
     URL_BASE_BACKEND_PUBBLICO,
 )
 
@@ -180,3 +181,50 @@ def invia_notifica_admin_nessuna_riserva(giorno_leggibile: str, data_leggibile: 
     )
     for numero in ADMIN_WHATSAPP_NUMERI:
         _invia(numero, testo, None, None, etichetta_simulazione=" PALAVILLAGE - AVVISO ADMIN")
+
+
+def invia_richiesta_punteggio_torneo(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str) -> bool:
+    """Mandato a fine torneo (dopo ORE_DURATA_TORNEO dall'inizio) a ogni titolare che ha giocato."""
+    testo = (
+        f"Ciao {nome}! Come è andato il torneo di {giorno_leggibile} {data_leggibile}? "
+        f"Rispondimi con il numero totale di game fatti (es. \"18\")."
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PV_RICHIESTA_PUNTEGGIO, variabili,
+                  etichetta_simulazione=" PALAVILLAGE - RICHIESTA PUNTEGGIO")
+
+
+def invia_sollecito_punteggio_torneo(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str) -> bool:
+    """Mandato T+2h a chi non ha ancora risposto con il proprio punteggio."""
+    testo = (
+        f"Ciao {nome}, non ho ancora ricevuto il tuo punteggio per il torneo di "
+        f"{giorno_leggibile} {data_leggibile}: quanti game hai fatto? Basta il numero (es. \"18\")."
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PV_SOLLECITO_PUNTEGGIO, variabili,
+                  etichetta_simulazione=" PALAVILLAGE - SOLLECITO PUNTEGGIO")
+
+
+def invia_punteggio_non_capito(numero_whatsapp: str) -> bool:
+    """Mandato quando la risposta ricevuta non è interpretabile come un numero di game."""
+    testo = "Non ho capito il punteggio, rispondimi solo con il numero di game fatti (es. \"18\")." + FIRMA_MESSAGGIO
+    return _invia(numero_whatsapp, testo, None, None, etichetta_simulazione=" PALAVILLAGE - PUNTEGGIO NON CAPITO")
+
+
+def invia_punteggio_confermato(numero_whatsapp: str, punteggio: int) -> bool:
+    """Piccola conferma immediata dopo aver ricevuto e registrato il punteggio."""
+    testo = f"Perfetto, ho segnato {punteggio} game. Grazie!" + FIRMA_MESSAGGIO
+    return _invia(numero_whatsapp, testo, None, None, etichetta_simulazione=" PALAVILLAGE - PUNTEGGIO CONFERMATO")
+
+
+def invia_classifica_aggiornata(numero_whatsapp: str, nome: str, nome_campionato: str, classifica_testo: str) -> bool:
+    """
+    Mandato a fine raccolta punteggi, a tutti i partecipanti del
+    torneo. 'classifica_testo' è già una stringa pronta con le righe
+    separate da " - " (mai un vero ritorno a capo dentro una variabile
+    di template, vietato da WhatsApp anche con JSON valido).
+    """
+    testo = f"Ciao {nome}! Classifica aggiornata di {nome_campionato}:\n{classifica_testo}" + FIRMA_MESSAGGIO
+    variabili = {"1": nome, "2": nome_campionato, "3": classifica_testo} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PV_CLASSIFICA_AGGIORNATA, variabili,
+                  etichetta_simulazione=" PALAVILLAGE - CLASSIFICA AGGIORNATA")

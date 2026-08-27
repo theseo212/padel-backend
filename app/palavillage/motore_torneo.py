@@ -14,20 +14,23 @@ import secrets
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
-from app.palavillage.models import Campionato, Torneo, IscrizioneTorneo, UtentePV, GruppoPV, GruppoMembroPV
+from app.palavillage.models import Campionato, Torneo, IscrizioneTorneo, UtentePV, GruppoPV, GruppoMembroPV, ClassificaVoce
 from app.palavillage.config import (
     ORE_RICHIESTA_ISCRIZIONE_PRIMA, ORE_SOLLECITO_ISCRIZIONE_PRIMA, ORE_FORMAZIONE_GRUPPI_PRIMA,
     ORA_INIZIO_TORNEO, GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO, MINUTI_TIMEOUT_PROMOZIONE_RISERVA,
+    ORE_DURATA_TORNEO, ORE_SOLLECITO_PUNTEGGIO_DOPO, ORE_CHIUSURA_FORZATA_PUNTEGGIO,
 )
 from app.palavillage.whatsapp_pv import (
     invia_richiesta_iscrizione_torneo, invia_sollecito_iscrizione_torneo, invia_conferma_ricevuta_torneo,
     invia_gruppo_assegnato_torneo, invia_sei_riserva_torneo, invia_avviso_gruppo_incompleto,
     invia_proposta_promozione_riserva, invia_promozione_confermata, invia_sostituzione_compagno,
-    invia_notifica_admin_nessuna_riserva,
+    invia_notifica_admin_nessuna_riserva, invia_richiesta_punteggio_torneo, invia_sollecito_punteggio_torneo,
+    invia_punteggio_non_capito, invia_punteggio_confermato, invia_classifica_aggiornata,
 )
 from app.palavillage.formazione_gruppi import Candidato, forma_gruppi, assegna_lati
-from app.palavillage.pdf_torneo import genera_pdf_torneo
+from app.palavillage.pdf_torneo import genera_pdf_torneo, _nome_campionato_leggibile
 from app.palavillage.email_pv import invia_pdf_torneo_segreteria
+from app.palavillage.routing import imposta_contesto_attivo, rimuovi_contesto_attivo
 
 _NOMI_GIORNI_LEGGIBILI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì"]
 
@@ -546,3 +549,226 @@ def job_gestisci_promozioni_scadute(db_pv: Session) -> int:
         gestisci_risposta_promozione(db_pv, iscrizione.id, accettata=False)
 
     return len(scadute)
+
+
+def job_richiedi_punteggio_torneo(db_pv: Session) -> int:
+    """
+    Quando un torneo è "finito" (ORE_DURATA_TORNEO dopo l'inizio), chiede
+    il punteggio a ogni titolare che ha davvero giocato (uno dei membri
+    di uno dei gruppi). Imposta anche il "contesto attivo" per ogni
+    numero, così il webhook sa interpretare il prossimo messaggio di
+    testo libero come una risposta a questa domanda.
+    """
+    adesso = _adesso_italia().replace(tzinfo=None)
+    elaborati = 0
+
+    tornei_da_elaborare = (
+        db_pv.query(Torneo)
+        .filter(Torneo.stato.in_(["PDF_INVIATI", "GRUPPI_FORMATI"]), Torneo.attivo == True)  # noqa: E712
+        .all()
+    )
+    for torneo in tornei_da_elaborare:
+        soglia = _inizio_torneo_italia(torneo.data) + timedelta(hours=ORE_DURATA_TORNEO)
+        soglia_naive = soglia.replace(tzinfo=None)
+        if adesso < soglia_naive:
+            continue
+
+        giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+        data_leggibile = torneo.data.strftime("%d/%m")
+
+        gruppi = db_pv.query(GruppoPV).filter(GruppoPV.torneo_id == torneo.id).all()
+        for gruppo in gruppi:
+            membri = db_pv.query(GruppoMembroPV).filter(GruppoMembroPV.gruppo_id == gruppo.id).all()
+            for membro in membri:
+                utente = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
+                if utente is None:
+                    continue
+                membro.punteggio_richiesto_il = adesso
+                invia_richiesta_punteggio_torneo(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+                imposta_contesto_attivo(db_pv, utente.whatsapp_numero, "RICHIESTA_PUNTEGGIO", membro.id)
+
+        torneo.stato = "RICHIESTA_PUNTEGGIO_INVIATA"
+        db_pv.commit()
+        elaborati += 1
+
+    return elaborati
+
+
+def job_sollecito_punteggio_torneo(db_pv: Session) -> int:
+    """T+2h dalla richiesta iniziale: sollecita solo chi non ha ancora risposto, una volta sola."""
+    adesso = _adesso_italia().replace(tzinfo=None)
+    soglia_sollecito = adesso - timedelta(hours=ORE_SOLLECITO_PUNTEGGIO_DOPO)
+
+    da_sollecitare = (
+        db_pv.query(GruppoMembroPV)
+        .filter(
+            GruppoMembroPV.stato_richiesta_punteggio == "IN_ATTESA",
+            GruppoMembroPV.punteggio_richiesto_il.isnot(None),
+            GruppoMembroPV.punteggio_richiesto_il < soglia_sollecito,
+            GruppoMembroPV.punteggio_sollecito_inviato == False,  # noqa: E712
+        )
+        .all()
+    )
+
+    for membro in da_sollecitare:
+        utente = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
+        gruppo = db_pv.query(GruppoPV).filter(GruppoPV.id == membro.gruppo_id).first()
+        torneo = db_pv.query(Torneo).filter(Torneo.id == gruppo.torneo_id).first() if gruppo else None
+        if utente is None or torneo is None:
+            continue
+
+        giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+        data_leggibile = torneo.data.strftime("%d/%m")
+        invia_sollecito_punteggio_torneo(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+        # Rinnoviamo il contesto attivo: la finestra iniziale (3h) potrebbe
+        # scadere prima che arrivi la risposta, specie se il sollecito
+        # stesso arriva dopo 2h - senza questo rinnovo, un messaggio di
+        # testo libero mandato dopo la scadenza scorrerebbe verso il
+        # sistema generico invece di essere interpretato come punteggio.
+        imposta_contesto_attivo(db_pv, utente.whatsapp_numero, "RICHIESTA_PUNTEGGIO", membro.id)
+        membro.punteggio_sollecito_inviato = True
+
+    db_pv.commit()
+    return len(da_sollecitare)
+
+
+def registra_punteggio_gruppo_membro(db_pv: Session, gruppo_membro_id: int, testo_ricevuto: str) -> dict:
+    """
+    Chiamata dal webhook quando arriva un messaggio di testo libero e il
+    contesto attivo dice che stiamo aspettando un punteggio da questo
+    numero. Prova a interpretare 'testo_ricevuto' come un numero di game;
+    se non ci riesce, chiede di ripetere SENZA cancellare il contesto
+    attivo (l'utente può riprovare subito dopo).
+    """
+    membro = db_pv.query(GruppoMembroPV).filter(GruppoMembroPV.id == gruppo_membro_id).first()
+    if membro is None:
+        return {"gestito": False, "motivo": "membro_non_trovato"}
+
+    utente = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
+    if utente is None:
+        return {"gestito": False, "motivo": "utente_non_trovato"}
+
+    if membro.stato_richiesta_punteggio == "RICEVUTO":
+        rimuovi_contesto_attivo(db_pv, utente.whatsapp_numero)
+        return {"gestito": False, "motivo": "già_ricevuto"}
+
+    import re
+    corrispondenza = re.search(r"\d+", testo_ricevuto or "")
+    if not corrispondenza:
+        invia_punteggio_non_capito(utente.whatsapp_numero)
+        return {"gestito": False, "motivo": "non_interpretabile"}
+
+    punteggio = int(corrispondenza.group())
+    if punteggio < 0 or punteggio > 200:
+        invia_punteggio_non_capito(utente.whatsapp_numero)
+        return {"gestito": False, "motivo": "fuori_range"}
+
+    membro.punteggio_riportato = punteggio
+    membro.stato_richiesta_punteggio = "RICEVUTO"
+    membro.data_risposta_punteggio = _adesso_italia().replace(tzinfo=None)
+    db_pv.commit()
+
+    rimuovi_contesto_attivo(db_pv, utente.whatsapp_numero)
+    invia_punteggio_confermato(utente.whatsapp_numero, punteggio)
+
+    return {"gestito": True, "punteggio": punteggio}
+
+
+def _testo_classifica(voci_ordinate: list) -> str:
+    """
+    'voci_ordinate' è una lista di tuple (utente, punti_totali), già
+    ordinata dal punteggio più alto al più basso. Righe separate da
+    " - " invece di un vero a capo, come richiesto da WhatsApp dentro
+    una singola variabile di template (vedi lezioni imparate).
+    """
+    righe = [f"{indice}. {utente.cognome} ({punti})" for indice, (utente, punti) in enumerate(voci_ordinate, start=1)]
+    return " - ".join(righe)
+
+
+def job_finalizza_punteggi_torneo(db_pv: Session) -> int:
+    """
+    Per ogni torneo in attesa di punteggi: se TUTTI i titolari hanno
+    risposto, oppure se è passato troppo tempo (chiusura forzata anche
+    con risposte mancanti), aggiorna la classifica del campionato e la
+    manda a tutti i partecipanti, poi segna il torneo TERMINATO.
+    """
+    adesso = _adesso_italia().replace(tzinfo=None)
+    elaborati = 0
+
+    tornei_da_elaborare = (
+        db_pv.query(Torneo)
+        .filter(Torneo.stato == "RICHIESTA_PUNTEGGIO_INVIATA", Torneo.attivo == True)  # noqa: E712
+        .all()
+    )
+    for torneo in tornei_da_elaborare:
+        gruppi = db_pv.query(GruppoPV).filter(GruppoPV.torneo_id == torneo.id).all()
+        gruppo_ids = [g.id for g in gruppi]
+        if not gruppo_ids:
+            continue
+
+        membri = db_pv.query(GruppoMembroPV).filter(GruppoMembroPV.gruppo_id.in_(gruppo_ids)).all()
+        if not membri:
+            continue
+
+        tutti_risposto = all(m.stato_richiesta_punteggio == "RICEVUTO" for m in membri)
+
+        richiesta_piu_vecchia = min((m.punteggio_richiesto_il for m in membri if m.punteggio_richiesto_il), default=None)
+        tempo_scaduto = (
+            richiesta_piu_vecchia is not None
+            and adesso - richiesta_piu_vecchia > timedelta(hours=ORE_CHIUSURA_FORZATA_PUNTEGGIO)
+        )
+
+        if not (tutti_risposto or tempo_scaduto):
+            continue
+
+        # Aggiorna la classifica con chi ha effettivamente riportato un punteggio
+        for membro in membri:
+            if membro.punteggio_riportato is None:
+                if membro.stato_richiesta_punteggio == "IN_ATTESA":
+                    membro.stato_richiesta_punteggio = "NON_RISPOSTO"
+                utente_senza_risposta = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
+                if utente_senza_risposta is not None:
+                    rimuovi_contesto_attivo(db_pv, utente_senza_risposta.whatsapp_numero)
+                continue
+
+            voce = (
+                db_pv.query(ClassificaVoce)
+                .filter(ClassificaVoce.campionato_id == torneo.campionato_id, ClassificaVoce.utente_id == membro.utente_id)
+                .first()
+            )
+            if voce is None:
+                voce = ClassificaVoce(campionato_id=torneo.campionato_id, utente_id=membro.utente_id, punti_totali=0, partite_giocate=0)
+                db_pv.add(voce)
+                db_pv.flush()
+            voce.punti_totali += membro.punteggio_riportato
+            voce.partite_giocate += 1
+
+        db_pv.commit()
+
+        # Costruisce e manda la classifica aggiornata a tutti i partecipanti del torneo
+        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        nome_campionato = _nome_campionato_leggibile(campionato)
+
+        tutte_le_voci = (
+            db_pv.query(ClassificaVoce)
+            .filter(ClassificaVoce.campionato_id == torneo.campionato_id)
+            .order_by(ClassificaVoce.punti_totali.desc())
+            .all()
+        )
+        voci_con_utente = []
+        for voce in tutte_le_voci:
+            utente_voce = db_pv.query(UtentePV).filter(UtentePV.id == voce.utente_id).first()
+            if utente_voce is not None:
+                voci_con_utente.append((utente_voce, voce.punti_totali))
+        classifica_testo = _testo_classifica(voci_con_utente)
+
+        for membro in membri:
+            utente = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
+            if utente is not None:
+                invia_classifica_aggiornata(utente.whatsapp_numero, utente.nome, nome_campionato, classifica_testo)
+
+        torneo.stato = "TERMINATO"
+        db_pv.commit()
+        elaborati += 1
+
+    return elaborati

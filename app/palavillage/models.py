@@ -196,6 +196,8 @@ class GruppoMembroPV(BasePV):
     stato_richiesta_punteggio = Column(String(15), default="IN_ATTESA")
     # IN_ATTESA, RICEVUTO, NON_RISPOSTO
     data_risposta_punteggio = Column(DateTime, nullable=True)
+    punteggio_richiesto_il = Column(DateTime, nullable=True)
+    punteggio_sollecito_inviato = Column(Boolean, default=False)
 
     gruppo = relationship("GruppoPV", back_populates="membri")
     utente = relationship("UtentePV")

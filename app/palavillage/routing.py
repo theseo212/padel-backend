@@ -71,11 +71,13 @@ def _gestisci_risposta_bottone(db_pv: Session, numero_mittente: str, azione: str
 def _gestisci_testo_libero(db_pv: Session, numero_mittente: str, contesto: ContestoAttivoWhatsApp, testo: str) -> None:
     """
     Il tipo di contesto (es. RICHIESTA_PUNTEGGIO) dice quale handler
-    interpretare per il testo libero in arrivo. Anche questa mappa si
-    riempie in fase 3.
+    interpretare per il testo libero in arrivo.
     """
-    # TODO fase 3: interpretare `testo` in base a contesto.tipo_contesto
-    # (es. estrarre il numero di game riportato).
+    if contesto.tipo_contesto == "RICHIESTA_PUNTEGGIO":
+        from app.palavillage.motore_torneo import registra_punteggio_gruppo_membro
+        registra_punteggio_gruppo_membro(db_pv, contesto.riferimento_id, testo)
+        return
+
     print(
         f"[PALAVILLAGE][TESTO LIBERO] {numero_mittente} -> "
         f"tipo='{contesto.tipo_contesto}' rif={contesto.riferimento_id} testo='{testo}' "
