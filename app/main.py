@@ -494,9 +494,54 @@ def crea_tabelle_palavillage():
         connessione.execute(text(
             "ALTER TABLE iscrizioni_torneo ADD COLUMN IF NOT EXISTS lato_proposto VARCHAR(2)"
         ))
+        connessione.execute(text(
+            "ALTER TABLE campionati ADD COLUMN IF NOT EXISTS nome VARCHAR(100)"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE tornei ADD COLUMN IF NOT EXISTS numero_tappa INTEGER"
+        ))
         connessione.commit()
 
     return {"ok": True, "messaggio": "Tabelle Palavillage create/aggiornate (o già a posto)."}
+
+
+@app.get("/admin/palavillage/campionati", dependencies=[Depends(verifica_credenziali_admin)])
+def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
+    """
+    Elenco dei campionati Palavillage, con il loro nome attuale (o quello
+    di riserva se non ancora assegnato) - utile finché non esiste ancora
+    il pannello admin completo (Fase 4).
+    """
+    from app.palavillage.models import Campionato
+    from app.palavillage.pdf_torneo import _nome_campionato_leggibile
+
+    campionati = db_pv.query(Campionato).order_by(Campionato.giorno_settimana, Campionato.numero_edizione).all()
+    return [
+        {
+            "id": c.id,
+            "giorno_settimana": c.giorno_settimana,
+            "numero_edizione": c.numero_edizione,
+            "nome": c.nome,
+            "nome_visualizzato": _nome_campionato_leggibile(c),
+            "stato": c.stato,
+        }
+        for c in campionati
+    ]
+
+
+@app.post("/admin/palavillage/campionati/{campionato_id}/nome", dependencies=[Depends(verifica_credenziali_admin)])
+def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Session = Depends(get_db_pv)):
+    """Assegna (o cambia) il nome identificativo di un campionato, es. 'Campionato Estivo 2026'."""
+    from app.palavillage.models import Campionato
+
+    nuovo_nome = (dati.get("nome") or "").strip() or None
+    campionato = db_pv.query(Campionato).filter(Campionato.id == campionato_id).first()
+    if campionato is None:
+        raise HTTPException(status_code=404, detail="Campionato non trovato")
+
+    campionato.nome = nuovo_nome
+    db_pv.commit()
+    return {"ok": True, "id": campionato.id, "nome": campionato.nome}
 
 
 @app.get("/health/db")
@@ -636,7 +681,7 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
         return _pagina_conferma_circolo_html(f"Torneo di {giorno_leggibile}", corpo)
 
     # Caso 2: già confermato, gruppi formati, imprevisto dell'ultimo momento
-    if iscrizione.stato_risposta == "CONFERMATO" and iscrizione.ruolo == "TITOLARE" and torneo.stato == "GRUPPI_FORMATI":
+    if iscrizione.stato_risposta == "CONFERMATO" and iscrizione.ruolo == "TITOLARE" and torneo.stato in ("GRUPPI_FORMATI", "PDF_INVIATI"):
         corpo = f"""
             <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
             <p class="esito ok">✅ Sei confermato/a per questo torneo.</p>
