@@ -100,6 +100,27 @@ def verifica_credenziali_admin(credenziali: HTTPBasicCredentials = Depends(_sicu
     return credenziali.username
 
 
+def verifica_credenziali_admin_palavillage(credenziali: HTTPBasicCredentials = Depends(_sicurezza_admin)):
+    """
+    Stesso schema di verifica_credenziali_admin, ma con le credenziali
+    DEDICATE di Palavillage (ADMIN_PV_USERNAME/ADMIN_PV_PASSWORD) invece
+    di quelle generiche di AnnaPadel - i due pannelli restano separati
+    anche nell'accesso, non solo nei dati.
+    """
+    from app.palavillage.config import ADMIN_PV_USERNAME, ADMIN_PV_PASSWORD
+
+    utente_corretto = secrets.compare_digest(credenziali.username, ADMIN_PV_USERNAME)
+    password_corretta = secrets.compare_digest(credenziali.password, ADMIN_PV_PASSWORD)
+
+    if not (utente_corretto and password_corretta):
+        raise HTTPException(
+            status_code=401,
+            detail="Credenziali non valide",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credenziali.username
+
+
 def job_matching_periodico():
     """Funzione eseguita automaticamente ogni INTERVALLO_BATCH_MINUTI."""
     db = SessionLocal()
@@ -521,7 +542,7 @@ def pagina_admin_circoli():
     return FileResponse(percorso)
 
 
-@app.get("/admin/palavillage/crea-tabelle", dependencies=[Depends(verifica_credenziali_admin)])
+@app.get("/admin/palavillage/crea-tabelle", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def crea_tabelle_palavillage():
     """
     Crea le tabelle del database Palavillage, se non esistono già.
@@ -568,7 +589,7 @@ def crea_tabelle_palavillage():
     return {"ok": True, "messaggio": "Tabelle Palavillage create/aggiornate (o già a posto)."}
 
 
-@app.get("/admin/palavillage/campionati", dependencies=[Depends(verifica_credenziali_admin)])
+@app.get("/admin/palavillage/campionati", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
     """
     Elenco dei campionati Palavillage, con il loro nome attuale (o quello
@@ -592,7 +613,7 @@ def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
     ]
 
 
-@app.post("/admin/palavillage/campionati/{campionato_id}/nome", dependencies=[Depends(verifica_credenziali_admin)])
+@app.post("/admin/palavillage/campionati/{campionato_id}/nome", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Session = Depends(get_db_pv)):
     """Assegna (o cambia) il nome identificativo di un campionato, es. 'Campionato Estivo 2026'."""
     from app.palavillage.models import Campionato
@@ -607,7 +628,7 @@ def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Sessi
     return {"ok": True, "id": campionato.id, "nome": campionato.nome}
 
 
-@app.get("/admin/palavillage/campionati/{campionato_id}/classifica", dependencies=[Depends(verifica_credenziali_admin)])
+@app.get("/admin/palavillage/campionati/{campionato_id}/classifica", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def classifica_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
     """Classifica attuale di un campionato, dal punteggio più alto al più basso."""
     from app.palavillage.models import Campionato, ClassificaVoce, UtentePV
@@ -638,7 +659,7 @@ def classifica_campionato_palavillage(campionato_id: int, db_pv: Session = Depen
     return {"campionato_id": campionato_id, "stato": campionato.stato, "classifica": risultato}
 
 
-@app.post("/admin/palavillage/campionati/{campionato_id}/chiudi", dependencies=[Depends(verifica_credenziali_admin)])
+@app.post("/admin/palavillage/campionati/{campionato_id}/chiudi", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def chiudi_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
     """
     Chiude un'edizione del campionato: congela la classifica (per
@@ -675,7 +696,7 @@ def chiudi_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(g
     }
 
 
-@app.get("/admin/palavillage/tornei", dependencies=[Depends(verifica_credenziali_admin)])
+@app.get("/admin/palavillage/tornei", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def elenca_tornei_palavillage(db_pv: Session = Depends(get_db_pv)):
     """
     Elenco dei tornei (passati recenti + tutti i futuri già generati),
@@ -739,7 +760,7 @@ def elenca_tornei_palavillage(db_pv: Session = Depends(get_db_pv)):
     return risultato
 
 
-@app.post("/admin/palavillage/tornei/{torneo_id}/attiva", dependencies=[Depends(verifica_credenziali_admin)])
+@app.post("/admin/palavillage/tornei/{torneo_id}/attiva", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def attiva_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
     from app.palavillage.motore_torneo import attiva_torneo
     risultato = attiva_torneo(db_pv, torneo_id)
@@ -748,7 +769,7 @@ def attiva_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv
     return risultato
 
 
-@app.post("/admin/palavillage/tornei/{torneo_id}/cancella", dependencies=[Depends(verifica_credenziali_admin)])
+@app.post("/admin/palavillage/tornei/{torneo_id}/cancella", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def cancella_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
     from app.palavillage.motore_torneo import cancella_torneo
     risultato = cancella_torneo(db_pv, torneo_id)
@@ -762,7 +783,7 @@ def cancella_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_
     return risultato
 
 
-@app.get("/admin/palavillage", dependencies=[Depends(verifica_credenziali_admin)])
+@app.get("/admin/palavillage", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def pagina_admin_palavillage():
     """Serve la pagina web del pannello admin Palavillage."""
     import os
