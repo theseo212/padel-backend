@@ -176,6 +176,45 @@ def job_palavillage_promozioni_scadute():
         db_pv.close()
 
 
+def job_palavillage_richiesta_punteggio():
+    """A fine torneo, chiede il punteggio a chi ha giocato."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import job_richiedi_punteggio_torneo
+    db_pv = SessionLocalPV()
+    try:
+        n = job_richiedi_punteggio_torneo(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][PUNTEGGIO] Richiesto per {n} tornei.")
+    finally:
+        db_pv.close()
+
+
+def job_palavillage_sollecito_punteggio():
+    """T+2h: sollecita chi non ha ancora risposto con il proprio punteggio."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import job_sollecito_punteggio_torneo
+    db_pv = SessionLocalPV()
+    try:
+        n = job_sollecito_punteggio_torneo(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][PUNTEGGIO] Sollecitati {n} giocatori.")
+    finally:
+        db_pv.close()
+
+
+def job_palavillage_finalizza_punteggi():
+    """Quando tutti hanno risposto (o è scaduto il tempo massimo), aggiorna la classifica e la invia."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import job_finalizza_punteggi_torneo
+    db_pv = SessionLocalPV()
+    try:
+        n = job_finalizza_punteggi_torneo(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][CLASSIFICA] Finalizzati {n} tornei.")
+    finally:
+        db_pv.close()
+
+
 def job_controllo_timeout():
     """Funzione eseguita automaticamente ogni minuto, per chiudere le proposte scadute."""
     db = SessionLocal()
@@ -419,6 +458,24 @@ def avvia_scheduler():
         minutes=5,
         id="palavillage_promozioni_scadute",
     )
+    scheduler.add_job(
+        job_palavillage_richiesta_punteggio,
+        "interval",
+        minutes=15,
+        id="palavillage_richiesta_punteggio",
+    )
+    scheduler.add_job(
+        job_palavillage_sollecito_punteggio,
+        "interval",
+        minutes=15,
+        id="palavillage_sollecito_punteggio",
+    )
+    scheduler.add_job(
+        job_palavillage_finalizza_punteggi,
+        "interval",
+        minutes=15,
+        id="palavillage_finalizza_punteggi",
+    )
     scheduler.start()
 
 
@@ -500,6 +557,12 @@ def crea_tabelle_palavillage():
         connessione.execute(text(
             "ALTER TABLE tornei ADD COLUMN IF NOT EXISTS numero_tappa INTEGER"
         ))
+        connessione.execute(text(
+            "ALTER TABLE gruppi_membri_pv ADD COLUMN IF NOT EXISTS punteggio_richiesto_il TIMESTAMP"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE gruppi_membri_pv ADD COLUMN IF NOT EXISTS punteggio_sollecito_inviato BOOLEAN DEFAULT FALSE"
+        ))
         connessione.commit()
 
     return {"ok": True, "messaggio": "Tabelle Palavillage create/aggiornate (o già a posto)."}
@@ -542,6 +605,74 @@ def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Sessi
     campionato.nome = nuovo_nome
     db_pv.commit()
     return {"ok": True, "id": campionato.id, "nome": campionato.nome}
+
+
+@app.get("/admin/palavillage/campionati/{campionato_id}/classifica", dependencies=[Depends(verifica_credenziali_admin)])
+def classifica_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
+    """Classifica attuale di un campionato, dal punteggio più alto al più basso."""
+    from app.palavillage.models import Campionato, ClassificaVoce, UtentePV
+
+    campionato = db_pv.query(Campionato).filter(Campionato.id == campionato_id).first()
+    if campionato is None:
+        raise HTTPException(status_code=404, detail="Campionato non trovato")
+
+    voci = (
+        db_pv.query(ClassificaVoce)
+        .filter(ClassificaVoce.campionato_id == campionato_id)
+        .order_by(ClassificaVoce.punti_totali.desc())
+        .all()
+    )
+    risultato = []
+    for posizione, voce in enumerate(voci, start=1):
+        utente = db_pv.query(UtentePV).filter(UtentePV.id == voce.utente_id).first()
+        if utente is None:
+            continue
+        risultato.append({
+            "posizione": posizione,
+            "utente_id": utente.id,
+            "nome": utente.nome,
+            "cognome": utente.cognome,
+            "punti_totali": voce.punti_totali,
+            "partite_giocate": voce.partite_giocate,
+        })
+    return {"campionato_id": campionato_id, "stato": campionato.stato, "classifica": risultato}
+
+
+@app.post("/admin/palavillage/campionati/{campionato_id}/chiudi", dependencies=[Depends(verifica_credenziali_admin)])
+def chiudi_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
+    """
+    Chiude un'edizione del campionato: congela la classifica (per
+    premiare il vincitore), registra chi ha vinto. La prossima volta che
+    lo scheduler genera i tornei futuri per questo giorno della
+    settimana, trovando nessun campionato APERTO ne crea automaticamente
+    uno nuovo (numero_edizione+1) - nessun'altra azione manuale richiesta.
+    """
+    from app.palavillage.models import Campionato, ClassificaVoce
+
+    campionato = db_pv.query(Campionato).filter(Campionato.id == campionato_id).first()
+    if campionato is None:
+        raise HTTPException(status_code=404, detail="Campionato non trovato")
+    if campionato.stato == "CHIUSO":
+        raise HTTPException(status_code=400, detail="Questo campionato è già chiuso")
+
+    primo_classificato = (
+        db_pv.query(ClassificaVoce)
+        .filter(ClassificaVoce.campionato_id == campionato_id)
+        .order_by(ClassificaVoce.punti_totali.desc())
+        .first()
+    )
+
+    campionato.stato = "CHIUSO"
+    campionato.data_chiusura = datetime.utcnow()
+    campionato.vincitore_utente_id = primo_classificato.utente_id if primo_classificato else None
+    db_pv.commit()
+
+    return {
+        "ok": True,
+        "campionato_id": campionato.id,
+        "vincitore_utente_id": campionato.vincitore_utente_id,
+        "messaggio": "Campionato chiuso. Una nuova edizione verrà aperta automaticamente al prossimo torneo generato per questo giorno.",
+    }
 
 
 @app.get("/health/db")
