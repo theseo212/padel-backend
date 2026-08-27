@@ -17,6 +17,7 @@ from app.services.whatsapp import _invia, genera_otp, invia_otp_whatsapp  # noqa
 from app.palavillage.config import (
     NOME_CIRCOLO, FIRMA_MESSAGGIO, TEMPLATE_PV_RIEPILOGO_ISCRIZIONE,
     TEMPLATE_PV_RICHIESTA_ISCRIZIONE, TEMPLATE_PV_SOLLECITO_ISCRIZIONE,
+    TEMPLATE_PV_GRUPPO_ASSEGNATO, TEMPLATE_PV_SEI_RISERVA,
     URL_BASE_BACKEND_PUBBLICO,
 )
 
@@ -84,3 +85,39 @@ def invia_conferma_ricevuta_torneo(numero_whatsapp: str, confermato: bool, giorn
     else:
         testo = f"Ok, ho segnato che non ci sarai {giorno_leggibile} {data_leggibile}. A presto!" + FIRMA_MESSAGGIO
     return _invia(numero_whatsapp, testo, None, None, etichetta_simulazione=" PALAVILLAGE - ACK BOTTONE")
+
+
+def invia_gruppo_assegnato_torneo(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str,
+                                    compagni: str, lato_assegnato: str) -> bool:
+    """
+    Mandato a ogni titolare dopo la formazione gruppi (T-12h). 'compagni'
+    è già una stringa pronta con i 3 nomi (separati da virgola, non da
+    ritorni a capo dentro la variabile - vietato da WhatsApp anche con
+    JSON tecnicamente valido, vedi lezioni imparate nell'handoff).
+    """
+    lato_leggibile = {"DX": "Destra", "SX": "Sinistra"}.get(lato_assegnato, lato_assegnato)
+    testo = (
+        f"Ciao {nome}! Ecco il tuo gruppo per {giorno_leggibile} {data_leggibile} a {NOME_CIRCOLO}:\n"
+        f"Giocherai con: {compagni}\n"
+        f"Lato assegnato: {lato_leggibile}\n"
+        f"Ci vediamo lì!"
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile, "4": compagni, "5": lato_leggibile} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PV_GRUPPO_ASSEGNATO, variabili,
+                  etichetta_simulazione=" PALAVILLAGE - GRUPPO ASSEGNATO")
+
+
+def invia_sei_riserva_torneo(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str) -> bool:
+    """
+    Mandato a chi resta fuori dai quartetti per un numero di conferme non
+    multiplo di 4. Tono positivo di proposito (concordato con il cliente):
+    non "sei escluso", ma "sei riserva" - con la prospettiva concreta di
+    entrare se si libera un posto.
+    """
+    testo = (
+        f"Ciao {nome}! Per {giorno_leggibile} {data_leggibile} sei riserva: se si libera un posto "
+        f"all'ultimo momento sarai il/la prima ad essere chiamato/a. Grazie per la disponibilità!"
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PV_SEI_RISERVA, variabili,
+                  etichetta_simulazione=" PALAVILLAGE - SEI RISERVA")

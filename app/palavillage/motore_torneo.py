@@ -14,14 +14,16 @@ import secrets
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
-from app.palavillage.models import Campionato, Torneo, IscrizioneTorneo, UtentePV
+from app.palavillage.models import Campionato, Torneo, IscrizioneTorneo, UtentePV, GruppoPV, GruppoMembroPV
 from app.palavillage.config import (
-    ORE_RICHIESTA_ISCRIZIONE_PRIMA, ORE_SOLLECITO_ISCRIZIONE_PRIMA,
+    ORE_RICHIESTA_ISCRIZIONE_PRIMA, ORE_SOLLECITO_ISCRIZIONE_PRIMA, ORE_FORMAZIONE_GRUPPI_PRIMA,
     ORA_INIZIO_TORNEO, GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO,
 )
 from app.palavillage.whatsapp_pv import (
     invia_richiesta_iscrizione_torneo, invia_sollecito_iscrizione_torneo, invia_conferma_ricevuta_torneo,
+    invia_gruppo_assegnato_torneo, invia_sei_riserva_torneo,
 )
+from app.palavillage.formazione_gruppi import Candidato, forma_gruppi, assegna_lati
 
 _NOMI_GIORNI_LEGGIBILI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì"]
 
@@ -237,3 +239,125 @@ def gestisci_risposta_bottone_iscrizione(db_pv: Session, iscrizione_id: int, con
     invia_conferma_ricevuta_torneo(utente.whatsapp_numero, confermato, giorno_leggibile, data_leggibile)
 
     return {"gestito": True, "stato": iscrizione.stato_risposta}
+
+
+def _mappa_compagni_precedenti(db_pv: Session, campionato_id: int, torneo_id_corrente: int) -> dict[int, set]:
+    """
+    Guarda l'ultimo torneo passato dello stesso campionato (stesso giorno
+    della settimana) che ha già gruppi formati, e ricostruisce per ogni
+    utente l'insieme dei compagni con cui ha giocato quella volta. Se non
+    esiste un torneo precedente con gruppi (es. prima edizione in
+    assoluto), ritorna una mappa vuota - va bene, in quel caso l'algoritmo
+    di formazione gruppi si limita a bilanciare per livello/lato.
+    """
+    torneo_precedente = (
+        db_pv.query(Torneo)
+        .filter(Torneo.campionato_id == campionato_id, Torneo.id != torneo_id_corrente)
+        .join(GruppoPV, GruppoPV.torneo_id == Torneo.id)
+        .order_by(Torneo.data.desc())
+        .first()
+    )
+    if torneo_precedente is None:
+        return {}
+
+    gruppi_precedenti = db_pv.query(GruppoPV).filter(GruppoPV.torneo_id == torneo_precedente.id).all()
+    mappa: dict[int, set] = {}
+    for gruppo in gruppi_precedenti:
+        membri = db_pv.query(GruppoMembroPV).filter(GruppoMembroPV.gruppo_id == gruppo.id).all()
+        ids_membri = [m.utente_id for m in membri]
+        for utente_id in ids_membri:
+            mappa[utente_id] = set(ids_membri) - {utente_id}
+
+    return mappa
+
+
+def job_forma_gruppi_torneo(db_pv: Session) -> int:
+    """
+    Per ogni torneo attivo il cui T-12h è arrivato: chiude le iscrizioni,
+    decide titolari/riserve in base all'ordine di conferma, forma i
+    gruppi da 4 con l'algoritmo di formazione_gruppi.py, li salva e manda
+    i messaggi (gruppo assegnato ai titolari, "sei riserva" agli esclusi).
+    """
+    adesso = _adesso_italia()
+    elaborati = 0
+
+    tornei_da_elaborare = (
+        db_pv.query(Torneo)
+        .filter(Torneo.stato == "SOLLECITO_INVIATO", Torneo.attivo == True)  # noqa: E712
+        .all()
+    )
+    for torneo in tornei_da_elaborare:
+        soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_FORMAZIONE_GRUPPI_PRIMA)
+        if adesso < soglia:
+            continue
+
+        giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+        data_leggibile = torneo.data.strftime("%d/%m")
+
+        confermati = (
+            db_pv.query(IscrizioneTorneo)
+            .filter(IscrizioneTorneo.torneo_id == torneo.id, IscrizioneTorneo.stato_risposta == "CONFERMATO")
+            .order_by(IscrizioneTorneo.ordine_conferma)
+            .all()
+        )
+
+        n_completi = (len(confermati) // 4) * 4
+        titolari_iscrizioni = confermati[:n_completi]
+        riserve_iscrizioni = confermati[n_completi:]
+
+        for iscrizione in riserve_iscrizioni:
+            iscrizione.ruolo = "RISERVA"
+        for iscrizione in titolari_iscrizioni:
+            iscrizione.ruolo = "TITOLARE"
+        db_pv.commit()
+
+        if n_completi > 0:
+            compagni_precedenti = _mappa_compagni_precedenti(db_pv, torneo.campionato_id, torneo.id)
+
+            utenti_per_id = {}
+            candidati = []
+            for iscrizione in titolari_iscrizioni:
+                utente = db_pv.query(UtentePV).filter(UtentePV.id == iscrizione.utente_id).first()
+                utenti_per_id[utente.id] = utente
+                candidati.append(Candidato(
+                    id=utente.id,
+                    livello=float(utente.livello_playtomic),
+                    lato=utente.lato_preferito,
+                    compagni_precedenti=compagni_precedenti.get(utente.id, set()),
+                ))
+
+            gruppi_formati = forma_gruppi(candidati)
+
+            for indice, gruppo in enumerate(gruppi_formati, start=1):
+                gruppo_db = GruppoPV(torneo_id=torneo.id, numero_gruppo=indice)
+                db_pv.add(gruppo_db)
+                db_pv.flush()
+
+                assegnazione_lati = assegna_lati(gruppo)
+                for candidato in gruppo:
+                    db_pv.add(GruppoMembroPV(
+                        gruppo_id=gruppo_db.id,
+                        utente_id=candidato.id,
+                        lato_assegnato=assegnazione_lati[candidato.id],
+                    ))
+                db_pv.commit()
+
+                nomi_gruppo = {c.id: utenti_per_id[c.id].nome for c in gruppo}
+                for candidato in gruppo:
+                    compagni_nomi = ", ".join(nomi_gruppo[c.id] for c in gruppo if c.id != candidato.id)
+                    utente = utenti_per_id[candidato.id]
+                    invia_gruppo_assegnato_torneo(
+                        utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile,
+                        compagni_nomi, assegnazione_lati[candidato.id],
+                    )
+
+        for iscrizione in riserve_iscrizioni:
+            utente = db_pv.query(UtentePV).filter(UtentePV.id == iscrizione.utente_id).first()
+            if utente is not None:
+                invia_sei_riserva_torneo(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+
+        torneo.stato = "GRUPPI_FORMATI"
+        db_pv.commit()
+        elaborati += 1
+
+    return elaborati
