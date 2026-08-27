@@ -33,6 +33,7 @@ ADMIN_PV_PASSWORD = os.getenv("ADMIN_PV_PASSWORD", "cambiami-subito")
 # template dedicati a questo circolo (contenuti/brand diversi: "torneo"
 # invece di "partita", niente circoli da scegliere, ecc.)
 TEMPLATE_PV_RICHIESTA_ISCRIZIONE = os.getenv("TEMPLATE_PV_RICHIESTA_ISCRIZIONE")
+TEMPLATE_PV_RIEPILOGO_ISCRIZIONE = os.getenv("TEMPLATE_PV_RIEPILOGO_ISCRIZIONE")
 TEMPLATE_PV_SOLLECITO_ISCRIZIONE = os.getenv("TEMPLATE_PV_SOLLECITO_ISCRIZIONE")
 TEMPLATE_PV_SEI_RISERVA = os.getenv("TEMPLATE_PV_SEI_RISERVA")
 TEMPLATE_PV_GRUPPO_ASSEGNATO = os.getenv("TEMPLATE_PV_GRUPPO_ASSEGNATO")
