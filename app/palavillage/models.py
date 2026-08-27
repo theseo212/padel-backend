@@ -1,7 +1,7 @@
 """
 Tabelle del sistema Palavillage — un solo circolo, tornei del mattino
 dal lunedì al venerdì. DB completamente separato da quello generico
-AnnaPadel (vedi database.py), anche se la "voce" che scrive ai giocatori
+AnnaPadel (vedi database.py), anche se la "voce" che scrivee ai giocatori
 è la stessa Anna, con lo stesso numero WhatsApp.
 
 Convenzione per il giorno della settimana, usata in più tabelle:
