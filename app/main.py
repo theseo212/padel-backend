@@ -368,6 +368,22 @@ def pagina_admin_circoli():
     return FileResponse(percorso)
 
 
+@app.get("/admin/palavillage/crea-tabelle", dependencies=[Depends(verifica_credenziali_admin)])
+def crea_tabelle_palavillage():
+    """
+    Crea le tabelle del database Palavillage, se non esistono già.
+    Pensato per essere aperto una volta dal browser (richiede le stesse
+    credenziali admin usate per /admin) invece di lanciare uno script da
+    terminale. È sicuro aprirlo più volte: se le tabelle esistono già,
+    non fa nulla e non cancella dati.
+    """
+    from app.palavillage.database import engine_pv, BasePV
+    from app.palavillage import models as _modelli_pv  # noqa: F401 (registra le tabelle)
+
+    BasePV.metadata.create_all(bind=engine_pv)
+    return {"ok": True, "messaggio": "Tabelle Palavillage create (o già esistenti)."}
+
+
 @app.get("/health/db")
 def health_check_database(db: Session = Depends(get_db)):
     """
