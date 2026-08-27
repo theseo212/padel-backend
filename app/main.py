@@ -163,6 +163,19 @@ def job_palavillage_forma_gruppi():
         db_pv.close()
 
 
+def job_palavillage_promozioni_scadute():
+    """Chi non ha risposto in tempo a una proposta di promozione riserva viene saltato, si passa alla successiva."""
+    from app.palavillage.database import SessionLocalPV
+    from app.palavillage.motore_torneo import job_gestisci_promozioni_scadute
+    db_pv = SessionLocalPV()
+    try:
+        n = job_gestisci_promozioni_scadute(db_pv)
+        if n:
+            print(f"[PALAVILLAGE][PROMOZIONI] {n} proposte scadute gestite.")
+    finally:
+        db_pv.close()
+
+
 def job_controllo_timeout():
     """Funzione eseguita automaticamente ogni minuto, per chiudere le proposte scadute."""
     db = SessionLocal()
@@ -400,6 +413,12 @@ def avvia_scheduler():
         minutes=15,
         id="palavillage_forma_gruppi",
     )
+    scheduler.add_job(
+        job_palavillage_promozioni_scadute,
+        "interval",
+        minutes=5,
+        id="palavillage_promozioni_scadute",
+    )
     scheduler.start()
 
 
@@ -465,6 +484,15 @@ def crea_tabelle_palavillage():
     with engine_pv.connect() as connessione:
         connessione.execute(text(
             "ALTER TABLE iscrizioni_torneo ADD COLUMN IF NOT EXISTS codice_risposta VARCHAR(20)"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE iscrizioni_torneo ADD COLUMN IF NOT EXISTS promozione_scadenza TIMESTAMP"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE iscrizioni_torneo ADD COLUMN IF NOT EXISTS gruppo_proposto_id INTEGER"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE iscrizioni_torneo ADD COLUMN IF NOT EXISTS lato_proposto VARCHAR(2)"
         ))
         connessione.commit()
 
@@ -562,9 +590,17 @@ def _carica_iscrizione_pv_da_token(token: str, db_pv: Session):
 def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(get_db_pv)):
     """
     Pagina pubblica (nessuna credenziale, come /circolo/conferma/{token})
-    raggiungibile dal link mandato su WhatsApp: permette di confermare o
-    rifiutare la partecipazione a un torneo specifico.
+    raggiungibile dal link mandato su WhatsApp: gestisce 3 situazioni
+    diverse a seconda dello stato dell'iscrizione:
+    1. IN_ATTESA -> conferma/rifiuto iniziale
+    2. CONFERMATO + gruppi già formati -> possibilità di cancellare
+       all'ultimo momento (imprevisto)
+    3. Proposta di promozione riserva attiva -> conferma/rifiuto con
+       scadenza
+    In ogni altro caso, mostra semplicemente l'esito già registrato.
     """
+    from zoneinfo import ZoneInfo
+    adesso_italia = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
     iscrizione, torneo, utente = _carica_iscrizione_pv_da_token(token, db_pv)
     if iscrizione is None:
         return _pagina_conferma_circolo_html(
@@ -575,27 +611,60 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
     giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"][torneo.giorno_settimana]
     data_leggibile = torneo.data.strftime("%d/%m/%Y")
 
-    if iscrizione.stato_risposta != "IN_ATTESA":
-        esito_leggibile = "confermata la partecipazione" if iscrizione.stato_risposta == "CONFERMATO" else "segnalata l'assenza"
-        return _pagina_conferma_circolo_html(
-            "Già risposto",
-            f"<p class='esito ok'>✅ Hai già {esito_leggibile} per il torneo di {giorno_leggibile} {data_leggibile}, non c'è più nulla da fare qui.</p>",
-        )
+    # Caso 3: proposta di promozione riserva attiva e non ancora scaduta
+    if iscrizione.promozione_scadenza is not None and adesso_italia <= iscrizione.promozione_scadenza:
+        corpo = f"""
+            <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
+            <p>Si è liberato un posto: sei dentro! Confermi la tua partecipazione?</p>
+            <form method="POST" action="/palavillage/rispondi/{token}">
+                <button type="submit" name="azione" value="conferma_promozione" class="btn-conferma">Sì, ci sarò</button>
+                <button type="submit" name="azione" value="rifiuto_promozione" class="btn-fallita">No, non posso</button>
+            </form>
+        """
+        return _pagina_conferma_circolo_html("Posto disponibile!", corpo)
 
-    corpo = f"""
-        <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
-        <p class="dettaglio"><strong>Circolo:</strong> Palavillage</p>
-        <form method="POST" action="/palavillage/rispondi/{token}">
-            <button type="submit" name="azione" value="conferma" class="btn-conferma">Confermo, ci sarò</button>
-            <button type="submit" name="azione" value="rifiuto" class="btn-fallita">Non posso venire</button>
-        </form>
-    """
-    return _pagina_conferma_circolo_html(f"Torneo di {giorno_leggibile}", corpo)
+    # Caso 1: prima risposta, ancora in attesa
+    if iscrizione.stato_risposta == "IN_ATTESA":
+        corpo = f"""
+            <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
+            <p class="dettaglio"><strong>Circolo:</strong> Palavillage</p>
+            <form method="POST" action="/palavillage/rispondi/{token}">
+                <button type="submit" name="azione" value="conferma" class="btn-conferma">Confermo, ci sarò</button>
+                <button type="submit" name="azione" value="rifiuto" class="btn-fallita">Non posso venire</button>
+            </form>
+        """
+        return _pagina_conferma_circolo_html(f"Torneo di {giorno_leggibile}", corpo)
+
+    # Caso 2: già confermato, gruppi formati, imprevisto dell'ultimo momento
+    if iscrizione.stato_risposta == "CONFERMATO" and iscrizione.ruolo == "TITOLARE" and torneo.stato == "GRUPPI_FORMATI":
+        corpo = f"""
+            <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
+            <p class="esito ok">✅ Sei confermato/a per questo torneo.</p>
+            <p>Imprevisto dell'ultimo minuto? Puoi ancora annullare - cercherò subito un sostituto.</p>
+            <form method="POST" action="/palavillage/rispondi/{token}">
+                <button type="submit" name="azione" value="annulla_tardi" class="btn-fallita">Non posso più venire</button>
+            </form>
+        """
+        return _pagina_conferma_circolo_html(f"Torneo di {giorno_leggibile}", corpo)
+
+    # Altri casi: esito già definitivo, niente da fare
+    messaggi_esito = {
+        "CONFERMATO": "✅ Hai confermato la partecipazione a questo torneo.",
+        "RIFIUTATO": "Hai segnalato la tua assenza per questo torneo.",
+        "RITIRATO_DOPO_GRUPPO": "Hai annullato la tua partecipazione a questo torneo.",
+    }
+    testo_esito = messaggi_esito.get(iscrizione.stato_risposta, "Questa iscrizione è già stata gestita.")
+    return _pagina_conferma_circolo_html(
+        "Già gestito",
+        f"<p class='esito ok'>{testo_esito} Non c'è più nulla da fare qui.</p>",
+    )
 
 
 @app.post("/palavillage/rispondi/{token}")
 async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request, db_pv: Session = Depends(get_db_pv)):
-    from app.palavillage.motore_torneo import gestisci_risposta_bottone_iscrizione
+    from app.palavillage.motore_torneo import (
+        gestisci_risposta_bottone_iscrizione, richiedi_cancellazione_tardiva, gestisci_risposta_promozione,
+    )
 
     iscrizione, torneo, utente = _carica_iscrizione_pv_da_token(token, db_pv)
     if iscrizione is None:
@@ -607,6 +676,30 @@ async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request,
     giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"][torneo.giorno_settimana]
     data_leggibile = torneo.data.strftime("%d/%m/%Y")
 
+    corpo_form = await request.form()
+    azione = corpo_form.get("azione")
+
+    if azione in ("conferma_promozione", "rifiuto_promozione"):
+        risultato = gestisci_risposta_promozione(db_pv, iscrizione.id, accettata=(azione == "conferma_promozione"))
+        if risultato.get("esito") == "promossa":
+            corpo = f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! Controlla WhatsApp per i dettagli del gruppo.</p>"
+        elif not risultato.get("gestito") and risultato.get("motivo") == "proposta_scaduta":
+            corpo = "<p class='esito errore'>Il tempo per confermare questo posto è scaduto, è stato riproposto a qualcun altro.</p>"
+        else:
+            corpo = "<p class='esito ok'>Ok, grazie per aver risposto. Ti terrò comunque in considerazione per la prossima occasione.</p>"
+        return _pagina_conferma_circolo_html("Risposta registrata", corpo)
+
+    if azione == "annulla_tardi":
+        risultato = richiedi_cancellazione_tardiva(db_pv, iscrizione.id)
+        if not risultato.get("gestito"):
+            return _pagina_conferma_circolo_html(
+                "Non gestito",
+                "<p class='esito errore'>Non sono riuscito a registrare l'annullamento, riprova tra poco o scrivimi direttamente su WhatsApp.</p>",
+            )
+        corpo = f"<p class='esito ok'>Ok, ho segnato che non ci sarai {giorno_leggibile} {data_leggibile}. Sto cercando subito un sostituto per il tuo gruppo.</p>"
+        return _pagina_conferma_circolo_html("Annullamento registrato", corpo)
+
+    # Casi originari: prima risposta conferma/rifiuto
     if iscrizione.stato_risposta != "IN_ATTESA":
         esito_leggibile = "confermata la partecipazione" if iscrizione.stato_risposta == "CONFERMATO" else "segnalata l'assenza"
         return _pagina_conferma_circolo_html(
@@ -614,10 +707,7 @@ async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request,
             f"<p class='esito ok'>✅ Hai già {esito_leggibile} per il torneo di {giorno_leggibile} {data_leggibile} (magari da un altro dispositivo), non c'è più nulla da fare qui.</p>",
         )
 
-    corpo_form = await request.form()
-    azione = corpo_form.get("azione")
     confermato = azione == "conferma"
-
     risultato = gestisci_risposta_bottone_iscrizione(db_pv, iscrizione.id, confermato=confermato)
     if not risultato.get("gestito"):
         return _pagina_conferma_circolo_html(
