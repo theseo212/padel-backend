@@ -30,8 +30,8 @@ PUBLIC_FORM_URL_PALAVILLAGE = os.getenv("PUBLIC_FORM_URL_PALAVILLAGE", "https://
 URL_BASE_BACKEND_PUBBLICO = os.getenv("PADEL_BACKEND_URL", "https://web-production-3d15f.up.railway.app")
 
 # === PROTEZIONE PANNELLO ADMIN PALAVILLAGE ===
-ADMIN_PV_USERNAME = os.getenv("ADMIN_PV_USERNAME", "admin")
-ADMIN_PV_PASSWORD = os.getenv("ADMIN_PV_PASSWORD", "cambiami-subito")
+ADMIN_PV_USERNAME = os.getenv("ADMIN_PV_USERNAME", "admin_palavillage")
+ADMIN_PV_PASSWORD = os.getenv("ADMIN_PV_PASSWORD", "cambiami-anche-questo")
 
 # === TWILIO ===
 # Stesso account, stesso numero mittente del sistema generico: le
