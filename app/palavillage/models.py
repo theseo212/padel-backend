@@ -73,6 +73,12 @@ class Campionato(BasePV):
     giorno_settimana = Column(Integer, nullable=False)  # 0=lun ... 4=ven
     numero_edizione = Column(Integer, nullable=False)  # 1, 2, 3... per quel giorno
 
+    # Nome facoltativo assegnabile dall'admin (es. "Campionato Estivo
+    # 2026"). Se non impostato, si usa un nome di riserva generato
+    # automaticamente (es. "Campionato Lunedì #1") ovunque serva
+    # visualizzarlo (PDF, messaggi, pannello).
+    nome = Column(String(100), nullable=True)
+
     stato = Column(String(15), default="APERTO")  # APERTO, CHIUSO
 
     data_apertura = Column(DateTime, server_default=func.now())
@@ -97,6 +103,11 @@ class Torneo(BasePV):
     campionato_id = Column(Integer, ForeignKey("campionati.id"), nullable=False)
     data = Column(Date, nullable=False, unique=True)
     giorno_settimana = Column(Integer, nullable=False)  # denormalizzato, comodo per query/filtri
+
+    # Numero progressivo del torneo all'interno del suo campionato (1ª
+    # tappa, 2ª tappa...), assegnato una volta sola alla creazione -
+    # usato in testa alle tabelle PDF stampate per la segreteria.
+    numero_tappa = Column(Integer, nullable=True)
 
     # PROGRAMMATO, RICHIESTE_INVIATE, SOLLECITO_INVIATO, GRUPPI_FORMATI,
     # PDF_INVIATI, RICHIESTA_PUNTEGGIO_INVIATA, TERMINATO, ANNULLATO

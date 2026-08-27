@@ -26,6 +26,8 @@ from app.palavillage.whatsapp_pv import (
     invia_notifica_admin_nessuna_riserva,
 )
 from app.palavillage.formazione_gruppi import Candidato, forma_gruppi, assegna_lati
+from app.palavillage.pdf_torneo import genera_pdf_torneo
+from app.palavillage.email_pv import invia_pdf_torneo_segreteria
 
 _NOMI_GIORNI_LEGGIBILI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì"]
 
@@ -81,10 +83,13 @@ def genera_tornei_futuri(db_pv: Session) -> int:
             db_pv.add(campionato)
             db_pv.flush()
 
+        numero_tappa_attuale = db_pv.query(Torneo).filter(Torneo.campionato_id == campionato.id).count() + 1
+
         db_pv.add(Torneo(
             campionato_id=campionato.id,
             data=giorno_data,
             giorno_settimana=giorno_settimana,
+            numero_tappa=numero_tappa_attuale,
             stato="PROGRAMMATO",
         ))
         creati += 1
@@ -358,7 +363,20 @@ def job_forma_gruppi_torneo(db_pv: Session) -> int:
             if utente is not None:
                 invia_sei_riserva_torneo(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
 
-        torneo.stato = "GRUPPI_FORMATI"
+        if n_completi > 0:
+            pdf_bytes = genera_pdf_torneo(db_pv, torneo.id)
+            if pdf_bytes is not None:
+                nome_file = f"palavillage_gruppi_{torneo.data.isoformat()}.pdf"
+                oggetto = f"Palavillage - Gruppi torneo {giorno_leggibile} {data_leggibile}"
+                corpo_testo = (
+                    f"In allegato le tabelle dei gruppi e la griglia punteggi per il torneo di "
+                    f"{giorno_leggibile} {data_leggibile}."
+                )
+                invia_pdf_torneo_segreteria(pdf_bytes, nome_file, oggetto, corpo_testo)
+            torneo.stato = "PDF_INVIATI"
+        else:
+            torneo.stato = "GRUPPI_FORMATI"
+
         db_pv.commit()
         elaborati += 1
 
@@ -418,7 +436,7 @@ def richiedi_cancellazione_tardiva(db_pv: Session, iscrizione_id: int) -> dict:
         return {"gestito": False, "motivo": "iscrizione_non_trovata"}
 
     torneo = db_pv.query(Torneo).filter(Torneo.id == iscrizione.torneo_id).first()
-    if torneo is None or torneo.stato != "GRUPPI_FORMATI" or iscrizione.stato_risposta != "CONFERMATO" or iscrizione.ruolo != "TITOLARE":
+    if torneo is None or torneo.stato not in ("GRUPPI_FORMATI", "PDF_INVIATI") or iscrizione.stato_risposta != "CONFERMATO" or iscrizione.ruolo != "TITOLARE":
         return {"gestito": False, "motivo": "non_cancellabile_in_questo_momento"}
 
     membro = (
