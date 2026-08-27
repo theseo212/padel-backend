@@ -396,13 +396,14 @@ def health_check_database(db: Session = Depends(get_db)):
 
 
 @app.get("/palavillage/utenti/profilo")
-def profilo_utente_palavillage(whatsapp_numero: str, db_pv: Session = Depends(get_db_pv)):
+def profilo_utente_palavillage(whatsapp_numero: str, db_pv: Session = Depends(get_db_pv), db: Session = Depends(get_db)):
     """
-    Equivalente di /utenti/profilo ma per Palavillage: cerca l'utente nel
-    SUO database (non in quello generico) per riconoscerlo nel form.
+    Equivalente di /utenti/profilo ma per Palavillage: cerca l'utente
+    prima nel SUO database, poi (se non trovato) anche in quello
+    generico, per precompilare comunque nome/cognome/livello.
     """
     from app.palavillage.servizio_iscrizione import profilo_pv
-    return profilo_pv(db_pv, whatsapp_numero)
+    return profilo_pv(db_pv, db, whatsapp_numero)
 
 
 @app.post("/palavillage/iscrizione", response_model=palavillage_schemas.IscrizionePVResponse)
