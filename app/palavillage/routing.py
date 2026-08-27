@@ -54,14 +54,18 @@ def gestisci_webhook_palavillage(db_pv: Session, numero_mittente: str, dati: dic
 
 def _gestisci_risposta_bottone(db_pv: Session, numero_mittente: str, azione: str) -> None:
     """
-    azione è la parte del payload dopo il prefisso, es. "CONF::123"
-    (conferma iscrizione al torneo 123), "RIF::123" (rifiuto), ecc.
-    La mappa completa delle azioni verrà popolata mano a mano che
-    costruiamo ogni step del ciclo torneo (fase 3).
+    Gestisce risposte a VERI bottoni Quick Reply WhatsApp (payload fisso,
+    deciso in fase di creazione del template). La conferma/rifiuto di
+    iscrizione al torneo NON passa da qui: usa un link con token
+    (id.codice_casuale) invece di un bottone, perché il payload di un
+    Quick Reply non può contenere l'id dinamico di ogni iscrizione - vedi
+    /palavillage/rispondi/{token} in main.py e IscrizioneTorneo.codice_risposta.
+
+    Questa funzione resta pronta per future interazioni Palavillage che
+    useranno davvero bottoni Quick Reply a payload fisso (es. un singolo
+    "Sì/No" senza bisogno di riferirsi a un id specifico).
     """
-    # TODO fase 3: instradare verso il motore torneo (conferma iscrizione,
-    # promozione riserva, ecc.) in base al prefisso dell'azione.
-    print(f"[PALAVILLAGE][BOTTONE] {numero_mittente} -> azione='{azione}' (handler da implementare)")
+    print(f"[PALAVILLAGE][BOTTONE] {numero_mittente} -> azione non riconosciuta: '{azione}'")
 
 
 def _gestisci_testo_libero(db_pv: Session, numero_mittente: str, contesto: ContestoAttivoWhatsApp, testo: str) -> None:

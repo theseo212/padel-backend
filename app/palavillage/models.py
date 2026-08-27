@@ -1,7 +1,7 @@
 """
 Tabelle del sistema Palavillage — un solo circolo, tornei del mattino
 dal lunedì al venerdì. DB completamente separato da quello generico
-AnnaPadel (vedi database.py), anche se la "voce" che scrivee ai giocatori
+AnnaPadel (vedi database.py), anche se la "voce" che scrive ai giocatori
 è la stessa Anna, con lo stesso numero WhatsApp.
 
 Convenzione per il giorno della settimana, usata in più tabelle:
@@ -131,6 +131,15 @@ class IscrizioneTorneo(BasePV):
 
     ordine_conferma = Column(Integer, nullable=True)  # per stabilire chi resta fuori
     data_risposta = Column(DateTime, nullable=True)
+
+    # Codice casuale (non indovinabile) per il link di conferma mandato
+    # su WhatsApp - stessa identica idea del sistema generico per la
+    # conferma prenotazione circolo (vedi gruppi.codice_conferma_circolo):
+    # i bottoni "Quick Reply" di WhatsApp hanno un payload FISSO deciso
+    # una volta per tutte in fase di creazione del template su Twilio,
+    # quindi non possono contenere l'id dinamico di ogni iscrizione - un
+    # link con token invece sì.
+    codice_risposta = Column(String(20), nullable=True)
 
     torneo = relationship("Torneo", back_populates="iscrizioni")
     utente = relationship("UtentePV", back_populates="iscrizioni")

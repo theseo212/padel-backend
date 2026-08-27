@@ -22,6 +22,13 @@ PREFISSO_ROUTING = "PV::"
 # === INDIRIZZO PUBBLICO DEL FORM (sottocartella dello stesso dominio) ===
 PUBLIC_FORM_URL_PALAVILLAGE = os.getenv("PUBLIC_FORM_URL_PALAVILLAGE", "https://www.annapadel.it/palavillage")
 
+# URL pubblico del backend stesso: serve solo per costruire il link
+# leggibile nei messaggi di simulazione/testo-libero (nel template Twilio
+# vero, questo indirizzo di base è già scritto dentro il template stesso
+# su Twilio - il codice manda solo il token come variabile, stesso
+# identico schema del link di conferma circolo nel sistema generico).
+URL_BASE_BACKEND_PUBBLICO = os.getenv("PADEL_BACKEND_URL", "https://web-production-3d15f.up.railway.app")
+
 # === PROTEZIONE PANNELLO ADMIN PALAVILLAGE ===
 ADMIN_PV_USERNAME = os.getenv("ADMIN_PV_USERNAME", "admin")
 ADMIN_PV_PASSWORD = os.getenv("ADMIN_PV_PASSWORD", "cambiami-subito")
@@ -50,6 +57,8 @@ ORE_RICHIESTA_ISCRIZIONE_PRIMA = 6 * 24    # T-6gg
 ORE_SOLLECITO_ISCRIZIONE_PRIMA = 3 * 24    # T-3gg
 ORE_FORMAZIONE_GRUPPI_PRIMA = 12           # T-12h
 ORE_SOLLECITO_PUNTEGGIO_DOPO = 2           # T+2h dalla fine torneo
+ORA_INIZIO_TORNEO = "08:00"                # orario locale (Europe/Rome) di inizio torneo
+GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO = 14 # quante giornate future tenere sempre pronte
 
 # === CONTESTO ATTIVO WHATSAPP (routing testo libero) ===
 MINUTI_VALIDITA_CONTESTO_ATTIVO = 180  # oltre questa finestra, si considera scaduto
