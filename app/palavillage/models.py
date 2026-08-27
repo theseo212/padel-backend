@@ -141,6 +141,15 @@ class IscrizioneTorneo(BasePV):
     # link con token invece sì.
     codice_risposta = Column(String(20), nullable=True)
 
+    # Usati SOLO durante la finestra di una proposta di promozione a una
+    # riserva (dopo una cancellazione tardiva di un titolare): quale
+    # gruppo/lato erediterebbe se accetta, ed entro quando deve rispondere.
+    # Tornano a None appena la proposta si risolve (accettata, rifiutata
+    # o scaduta).
+    promozione_scadenza = Column(DateTime, nullable=True)
+    gruppo_proposto_id = Column(Integer, nullable=True)
+    lato_proposto = Column(String(2), nullable=True)
+
     torneo = relationship("Torneo", back_populates="iscrizioni")
     utente = relationship("UtentePV", back_populates="iscrizioni")
 

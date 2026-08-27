@@ -59,6 +59,7 @@ ORE_FORMAZIONE_GRUPPI_PRIMA = 12           # T-12h
 ORE_SOLLECITO_PUNTEGGIO_DOPO = 2           # T+2h dalla fine torneo
 ORA_INIZIO_TORNEO = "08:00"                # orario locale (Europe/Rome) di inizio torneo
 GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO = 14 # quante giornate future tenere sempre pronte
+MINUTI_TIMEOUT_PROMOZIONE_RISERVA = 30     # tempo dato a una riserva per confermare dopo una cancellazione tardiva
 
 # === CONTESTO ATTIVO WHATSAPP (routing testo libero) ===
 MINUTI_VALIDITA_CONTESTO_ATTIVO = 180  # oltre questa finestra, si considera scaduto

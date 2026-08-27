@@ -17,7 +17,7 @@ from app.services.whatsapp import _invia, genera_otp, invia_otp_whatsapp  # noqa
 from app.palavillage.config import (
     NOME_CIRCOLO, FIRMA_MESSAGGIO, TEMPLATE_PV_RIEPILOGO_ISCRIZIONE,
     TEMPLATE_PV_RICHIESTA_ISCRIZIONE, TEMPLATE_PV_SOLLECITO_ISCRIZIONE,
-    TEMPLATE_PV_GRUPPO_ASSEGNATO, TEMPLATE_PV_SEI_RISERVA,
+    TEMPLATE_PV_GRUPPO_ASSEGNATO, TEMPLATE_PV_SEI_RISERVA, TEMPLATE_PV_PROMOZIONE_RISERVA,
     URL_BASE_BACKEND_PUBBLICO,
 )
 
@@ -121,3 +121,62 @@ def invia_sei_riserva_torneo(numero_whatsapp: str, nome: str, giorno_leggibile: 
     variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile} if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PV_SEI_RISERVA, variabili,
                   etichetta_simulazione=" PALAVILLAGE - SEI RISERVA")
+
+
+def invia_avviso_gruppo_incompleto(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str) -> bool:
+    """Mandato ai 3 compagni rimasti quando un titolare cancella all'ultimo momento, mentre si cerca un sostituto."""
+    testo = (
+        f"Ciao {nome}, un tuo compagno di {giorno_leggibile} {data_leggibile} non può più venire: "
+        f"sto cercando un sostituto tra le riserve, ti aggiorno appena ho novità."
+    ) + FIRMA_MESSAGGIO
+    return _invia(numero_whatsapp, testo, None, None, etichetta_simulazione=" PALAVILLAGE - GRUPPO INCOMPLETO")
+
+
+def invia_proposta_promozione_riserva(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str,
+                                        token: str, minuti_scadenza: int) -> bool:
+    """Mandato alla prima riserva disponibile quando si libera un posto dopo la formazione gruppi."""
+    url_risposta = f"{URL_BASE_BACKEND_PUBBLICO}/palavillage/rispondi/{token}"
+    testo = (
+        f"Ciao {nome}! Si è liberato un posto per il torneo di {giorno_leggibile} {data_leggibile} a {NOME_CIRCOLO}: "
+        f"sei dentro! Conferma entro {minuti_scadenza} minuti qui: {url_risposta}"
+    ) + FIRMA_MESSAGGIO
+    variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile, "4": str(minuti_scadenza), "5": token} if nome else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_PV_PROMOZIONE_RISERVA, variabili,
+                  etichetta_simulazione=" PALAVILLAGE - PROPOSTA PROMOZIONE")
+
+
+def invia_promozione_confermata(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str,
+                                  compagni: str, lato_assegnato: str) -> bool:
+    """Conferma alla riserva appena promossa, con i dettagli del gruppo che si ritrova."""
+    lato_leggibile = {"DX": "Destra", "SX": "Sinistra"}.get(lato_assegnato, lato_assegnato)
+    testo = (
+        f"Perfetto {nome}, sei confermato/a per {giorno_leggibile} {data_leggibile}!\n"
+        f"Giocherai con: {compagni}\n"
+        f"Lato assegnato: {lato_leggibile}"
+    ) + FIRMA_MESSAGGIO
+    return _invia(numero_whatsapp, testo, None, None, etichetta_simulazione=" PALAVILLAGE - PROMOZIONE CONFERMATA")
+
+
+def invia_sostituzione_compagno(numero_whatsapp: str, nome: str, giorno_leggibile: str, data_leggibile: str,
+                                  nome_nuovo_compagno: str) -> bool:
+    """Mandato ai 3 compagni rimasti quando la riserva ha accettato ed è entrata nel gruppo."""
+    testo = (
+        f"Ciao {nome}, per {giorno_leggibile} {data_leggibile} il tuo nuovo compagno di gruppo è: "
+        f"{nome_nuovo_compagno}. A presto!"
+    ) + FIRMA_MESSAGGIO
+    return _invia(numero_whatsapp, testo, None, None, etichetta_simulazione=" PALAVILLAGE - SOSTITUZIONE COMPAGNO")
+
+
+def invia_notifica_admin_nessuna_riserva(giorno_leggibile: str, data_leggibile: str, gruppo_numero: int) -> None:
+    """
+    Nessuna riserva disponibile (o nessuna ha risposto in tempo): avvisa
+    SOLO l'amministratore, che gestisce manualmente - nessuna azione
+    automatica ulteriore, come concordato.
+    """
+    from app.config import ADMIN_WHATSAPP_NUMERI
+    testo = (
+        f"⚠️ Palavillage: nel gruppo {gruppo_numero} del torneo di {giorno_leggibile} {data_leggibile} "
+        f"si è liberato un posto e non ci sono (più) riserve disponibili. Serve un intervento manuale."
+    )
+    for numero in ADMIN_WHATSAPP_NUMERI:
+        _invia(numero, testo, None, None, etichetta_simulazione=" PALAVILLAGE - AVVISO ADMIN")

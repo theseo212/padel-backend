@@ -17,11 +17,13 @@ from sqlalchemy.orm import Session
 from app.palavillage.models import Campionato, Torneo, IscrizioneTorneo, UtentePV, GruppoPV, GruppoMembroPV
 from app.palavillage.config import (
     ORE_RICHIESTA_ISCRIZIONE_PRIMA, ORE_SOLLECITO_ISCRIZIONE_PRIMA, ORE_FORMAZIONE_GRUPPI_PRIMA,
-    ORA_INIZIO_TORNEO, GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO,
+    ORA_INIZIO_TORNEO, GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO, MINUTI_TIMEOUT_PROMOZIONE_RISERVA,
 )
 from app.palavillage.whatsapp_pv import (
     invia_richiesta_iscrizione_torneo, invia_sollecito_iscrizione_torneo, invia_conferma_ricevuta_torneo,
-    invia_gruppo_assegnato_torneo, invia_sei_riserva_torneo,
+    invia_gruppo_assegnato_torneo, invia_sei_riserva_torneo, invia_avviso_gruppo_incompleto,
+    invia_proposta_promozione_riserva, invia_promozione_confermata, invia_sostituzione_compagno,
+    invia_notifica_admin_nessuna_riserva,
 )
 from app.palavillage.formazione_gruppi import Candidato, forma_gruppi, assegna_lati
 
@@ -361,3 +363,168 @@ def job_forma_gruppi_torneo(db_pv: Session) -> int:
         elaborati += 1
 
     return elaborati
+
+
+def _prova_promuovi_prossima_riserva(db_pv: Session, torneo: Torneo, gruppo_id: int, lato_da_coprire: str) -> bool:
+    """
+    Cerca la prima riserva ancora disponibile (non già "saltata" per
+    aver rifiutato o non risposto in tempo a un tentativo precedente) e
+    le propone il posto libero. Se non ce n'è nessuna, avvisa SOLO
+    l'amministratore (nessuna azione automatica ulteriore, come
+    concordato) e ritorna False.
+    """
+    candidata = (
+        db_pv.query(IscrizioneTorneo)
+        .filter(
+            IscrizioneTorneo.torneo_id == torneo.id,
+            IscrizioneTorneo.ruolo == "RISERVA",
+            IscrizioneTorneo.stato_risposta == "CONFERMATO",
+        )
+        .order_by(IscrizioneTorneo.ordine_conferma)
+        .first()
+    )
+
+    giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+    data_leggibile = torneo.data.strftime("%d/%m")
+
+    if candidata is None:
+        gruppo = db_pv.query(GruppoPV).filter(GruppoPV.id == gruppo_id).first()
+        numero_gruppo = gruppo.numero_gruppo if gruppo else 0
+        invia_notifica_admin_nessuna_riserva(giorno_leggibile, data_leggibile, numero_gruppo)
+        return False
+
+    utente = db_pv.query(UtentePV).filter(UtentePV.id == candidata.utente_id).first()
+    candidata.promozione_scadenza = _adesso_italia().replace(tzinfo=None) + timedelta(minutes=MINUTI_TIMEOUT_PROMOZIONE_RISERVA)
+    candidata.gruppo_proposto_id = gruppo_id
+    candidata.lato_proposto = lato_da_coprire
+    db_pv.commit()
+
+    token = f"{candidata.id}.{candidata.codice_risposta}"
+    invia_proposta_promozione_riserva(
+        utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile, token, MINUTI_TIMEOUT_PROMOZIONE_RISERVA
+    )
+    return True
+
+
+def richiedi_cancellazione_tardiva(db_pv: Session, iscrizione_id: int) -> dict:
+    """
+    Un titolare, dopo che i gruppi sono già stati formati, comunica che
+    non può più venire. Libera il suo posto nel gruppo, avvisa i 3
+    compagni rimasti, e tenta subito di promuovere la prima riserva
+    disponibile.
+    """
+    iscrizione = db_pv.query(IscrizioneTorneo).filter(IscrizioneTorneo.id == iscrizione_id).first()
+    if iscrizione is None:
+        return {"gestito": False, "motivo": "iscrizione_non_trovata"}
+
+    torneo = db_pv.query(Torneo).filter(Torneo.id == iscrizione.torneo_id).first()
+    if torneo is None or torneo.stato != "GRUPPI_FORMATI" or iscrizione.stato_risposta != "CONFERMATO" or iscrizione.ruolo != "TITOLARE":
+        return {"gestito": False, "motivo": "non_cancellabile_in_questo_momento"}
+
+    membro = (
+        db_pv.query(GruppoMembroPV)
+        .filter(GruppoMembroPV.utente_id == iscrizione.utente_id)
+        .join(GruppoPV, GruppoPV.id == GruppoMembroPV.gruppo_id)
+        .filter(GruppoPV.torneo_id == torneo.id)
+        .first()
+    )
+    if membro is None:
+        return {"gestito": False, "motivo": "dati_incoerenti"}
+
+    gruppo_id = membro.gruppo_id
+    lato_liberato = membro.lato_assegnato
+
+    giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+    data_leggibile = torneo.data.strftime("%d/%m")
+
+    altri_membri = (
+        db_pv.query(GruppoMembroPV)
+        .filter(GruppoMembroPV.gruppo_id == gruppo_id, GruppoMembroPV.utente_id != iscrizione.utente_id)
+        .all()
+    )
+    for altro in altri_membri:
+        altro_utente = db_pv.query(UtentePV).filter(UtentePV.id == altro.utente_id).first()
+        if altro_utente is not None:
+            invia_avviso_gruppo_incompleto(altro_utente.whatsapp_numero, altro_utente.nome, giorno_leggibile, data_leggibile)
+
+    db_pv.delete(membro)
+    iscrizione.stato_risposta = "RITIRATO_DOPO_GRUPPO"
+    db_pv.commit()
+
+    trovata_riserva = _prova_promuovi_prossima_riserva(db_pv, torneo, gruppo_id, lato_liberato)
+
+    return {"gestito": True, "riserva_contattata": trovata_riserva}
+
+
+def gestisci_risposta_promozione(db_pv: Session, iscrizione_id: int, accettata: bool) -> dict:
+    """
+    Risposta di una riserva a una proposta di promozione attiva. Se
+    rifiuta (o la proposta nel frattempo è scaduta), si passa in cascata
+    alla riserva successiva - non ci si ferma al primo rifiuto se ce ne
+    sono altre disponibili.
+    """
+    iscrizione = db_pv.query(IscrizioneTorneo).filter(IscrizioneTorneo.id == iscrizione_id).first()
+    if iscrizione is None or iscrizione.promozione_scadenza is None:
+        return {"gestito": False, "motivo": "nessuna_proposta_attiva"}
+
+    torneo = db_pv.query(Torneo).filter(Torneo.id == iscrizione.torneo_id).first()
+    gruppo_id = iscrizione.gruppo_proposto_id
+    lato_proposto = iscrizione.lato_proposto
+    scaduta = _adesso_italia().replace(tzinfo=None) > iscrizione.promozione_scadenza
+
+    iscrizione.promozione_scadenza = None
+    iscrizione.gruppo_proposto_id = None
+    iscrizione.lato_proposto = None
+
+    if scaduta:
+        iscrizione.ruolo = "RISERVA_SALTATA"
+        db_pv.commit()
+        _prova_promuovi_prossima_riserva(db_pv, torneo, gruppo_id, lato_proposto)
+        return {"gestito": False, "motivo": "proposta_scaduta"}
+
+    if not accettata:
+        iscrizione.ruolo = "RISERVA_SALTATA"
+        db_pv.commit()
+        _prova_promuovi_prossima_riserva(db_pv, torneo, gruppo_id, lato_proposto)
+        return {"gestito": True, "esito": "rifiutata"}
+
+    utente = db_pv.query(UtentePV).filter(UtentePV.id == iscrizione.utente_id).first()
+    db_pv.add(GruppoMembroPV(gruppo_id=gruppo_id, utente_id=utente.id, lato_assegnato=lato_proposto))
+    iscrizione.ruolo = "TITOLARE"
+    db_pv.commit()
+
+    giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+    data_leggibile = torneo.data.strftime("%d/%m")
+
+    membri_gruppo = db_pv.query(GruppoMembroPV).filter(GruppoMembroPV.gruppo_id == gruppo_id).all()
+    nomi_compagni = []
+    for membro in membri_gruppo:
+        if membro.utente_id == utente.id:
+            continue
+        compagno = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
+        if compagno is not None:
+            nomi_compagni.append(compagno.nome)
+            invia_sostituzione_compagno(compagno.whatsapp_numero, compagno.nome, giorno_leggibile, data_leggibile, utente.nome)
+
+    invia_promozione_confermata(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile,
+                                  ", ".join(nomi_compagni), lato_proposto)
+
+    return {"gestito": True, "esito": "promossa"}
+
+
+def job_gestisci_promozioni_scadute(db_pv: Session) -> int:
+    """
+    Job periodico: chi aveva una proposta di promozione attiva ma non ha
+    risposto entro il tempo dato viene considerato "saltato" e si passa
+    alla riserva successiva - stessa logica di un rifiuto esplicito.
+    """
+    adesso = _adesso_italia().replace(tzinfo=None)
+    scadute = (
+        db_pv.query(IscrizioneTorneo)
+        .filter(IscrizioneTorneo.promozione_scadenza.isnot(None), IscrizioneTorneo.promozione_scadenza < adesso)
+        .all()
+    )
+    for iscrizione in scadute:
+        gestisci_risposta_promozione(db_pv, iscrizione.id, accettata=False)
+
+    return len(scadute)
