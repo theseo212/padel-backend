@@ -117,7 +117,7 @@ async function forza(azione) {
     }
 
     risultato.className = '';
-    risultato.style.display = 'none';
+    risultato.style.display = '';
 
     try {
         const risposta = await fetch(`/admin/palavillage/tornei/${id}/${azione}`, { method: 'POST' });
