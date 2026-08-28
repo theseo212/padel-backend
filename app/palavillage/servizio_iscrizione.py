@@ -134,7 +134,6 @@ def gestisci_iscrizione(db_pv: Session, db_generico: Session, dati: IscrizionePV
         utente.data_accettazione_termini = datetime.utcnow()
 
     giorni_leggibili = giorni_bitmask_a_leggibile(utente.giorni_bitmask)
-    lato_leggibile = _LATO_LEGGIBILE.get(utente.lato_preferito, utente.lato_preferito)
 
     if not utente.whatsapp_validato:
         codice = genera_otp()
@@ -156,8 +155,7 @@ def gestisci_iscrizione(db_pv: Session, db_generico: Session, dati: IscrizionePV
     # Numero già fidato (validato nel sistema generico, o già validato qui
     # in una precedente iscrizione a Palavillage): nessun OTP da rifare.
     riepilogo_inviato_davvero = invia_riepilogo_iscrizione_pv(
-        utente.whatsapp_numero, utente.nome, giorni_leggibili, lato_leggibile,
-        str(utente.livello_playtomic),
+        utente.whatsapp_numero, utente.nome, giorni_leggibili,
     )
     db_pv.commit()
 
@@ -189,10 +187,8 @@ def valida_otp_pv(db_pv: Session, whatsapp_numero: str, codice_otp: str) -> dict
     db_pv.commit()
 
     giorni_leggibili = giorni_bitmask_a_leggibile(utente.giorni_bitmask)
-    lato_leggibile = _LATO_LEGGIBILE.get(utente.lato_preferito, utente.lato_preferito)
     invia_riepilogo_iscrizione_pv(
-        utente.whatsapp_numero, utente.nome, giorni_leggibili, lato_leggibile,
-        str(utente.livello_playtomic),
+        utente.whatsapp_numero, utente.nome, giorni_leggibili,
     )
 
     return {"messaggio": "Numero verificato con successo."}
