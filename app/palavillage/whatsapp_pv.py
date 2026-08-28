@@ -235,7 +235,8 @@ def invia_punteggio_confermato(numero_whatsapp: str, punteggio: int) -> bool:
     return _invia(numero_whatsapp, testo, None, None, etichetta_simulazione=" PALAVILLAGE - PUNTEGGIO CONFERMATO")
 
 
-def invia_classifica_aggiornata(numero_whatsapp: str, nome: str, nome_campionato: str, campionato_id: int) -> bool:
+def invia_classifica_aggiornata(numero_whatsapp: str, nome: str, nome_campionato: str,
+                                  giorno_leggibile: str, data_leggibile: str, campionato_id: int) -> bool:
     """
     Mandato a fine raccolta punteggi, a tutti i partecipanti del
     torneo: non più un elenco testuale (limitato dalla lunghezza
@@ -245,17 +246,24 @@ def invia_classifica_aggiornata(numero_whatsapp: str, nome: str, nome_campionato
     Il link è un bottone Call to Action con indirizzo di base FISSO e
     solo l'id del campionato come variabile - non l'URL intero dentro
     il testo: Meta è cauto nell'approvare template dove una variabile
-    diventa un link completo e libero (potrebbe teoricamente portare a
-    qualunque indirizzo, cosa che l'approvazione non può controllare in
-    anticipo). Con un bottone, il dominio di destinazione è fisso e
-    verificato una volta sola in fase di approvazione.
+    diventa un link completo e libero.
+
+    Include il riferimento specifico al torneo appena giocato (giorno +
+    data) - senza questo dettaglio, Meta ha riclassificato il primo
+    tentativo come Marketing invece di Utility: un messaggio troppo
+    generico ("è pronta la classifica") non basta, serve agganciarlo
+    all'interazione specifica dell'utente (vedi lezioni imparate
+    nell'handoff sulla stessa identica dinamica).
     """
     url_classifica = f"{URL_BASE_BACKEND_PUBBLICO}/palavillage/classifica/{campionato_id}"
-    testo = f"Ciao {nome}! È pronta la classifica aggiornata di {nome_campionato}. Guardala qui: {url_classifica}" + FIRMA_MESSAGGIO
-    # Il template Twilio (Call to Action) ha già l'indirizzo di base e il
-    # suffisso ".pdf" scritti al suo interno: la sola variabile dinamica
-    # nel bottone è l'id del campionato ({{3}}).
-    variabili = {"1": nome, "2": nome_campionato, "3": str(campionato_id)} if nome else None
+    testo = (
+        f"Ciao {nome}! Dopo il torneo di {giorno_leggibile} {data_leggibile}, ecco la classifica "
+        f"aggiornata di {nome_campionato}: {url_classifica}"
+    ) + FIRMA_MESSAGGIO
+    # Il template Twilio (Call to Action) ha già l'indirizzo di base
+    # scritto al suo interno: la sola variabile dinamica nel bottone è
+    # l'id del campionato ({{5}}).
+    variabili = {"1": nome, "2": giorno_leggibile, "3": data_leggibile, "4": nome_campionato, "5": str(campionato_id)} if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PV_CLASSIFICA_AGGIORNATA, variabili,
                   etichetta_simulazione=" PALAVILLAGE - CLASSIFICA AGGIORNATA (link)")
 

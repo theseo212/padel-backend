@@ -18,7 +18,7 @@ from app.palavillage.models import Campionato, Torneo, IscrizioneTorneo, UtenteP
 from app.palavillage.config import (
     ORE_RICHIESTA_ISCRIZIONE_PRIMA, ORE_SOLLECITO_ISCRIZIONE_PRIMA, ORE_FORMAZIONE_GRUPPI_PRIMA,
     ORA_INIZIO_TORNEO, GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO, MINUTI_TIMEOUT_PROMOZIONE_RISERVA,
-    ORE_DURATA_TORNEO, ORE_SOLLECITO_PUNTEGGIO_DOPO, ORE_CHIUSURA_FORZATA_PUNTEGGIO,
+    ORE_DURATA_TORNEO, ORE_SOLLECITO_PUNTEGGIO_DOPO, ORE_CHIUSURA_FORZATA_PUNTEGGIO, URL_BASE_BACKEND_PUBBLICO,
 )
 from app.palavillage.whatsapp_pv import (
     invia_richiesta_iscrizione_torneo, invia_sollecito_iscrizione_torneo, invia_conferma_ricevuta_torneo,
@@ -135,6 +135,8 @@ def job_invia_richieste_iscrizione(db_pv: Session) -> int:
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
+        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        nome_campionato = _nome_campionato_leggibile(campionato)
 
         for utente in utenti_da_contattare:
             già_iscritto = (
@@ -154,7 +156,7 @@ def job_invia_richieste_iscrizione(db_pv: Session) -> int:
 
             token = f"{iscrizione.id}.{iscrizione.codice_risposta}"
             invia_richiesta_iscrizione_torneo(
-                utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile, token
+                utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token
             )
 
         torneo.stato = "RICHIESTE_INVIATE"
@@ -186,6 +188,8 @@ def job_invia_solleciti_iscrizione(db_pv: Session) -> int:
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
+        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        nome_campionato = _nome_campionato_leggibile(campionato)
 
         non_risposto = (
             db_pv.query(IscrizioneTorneo)
@@ -198,7 +202,7 @@ def job_invia_solleciti_iscrizione(db_pv: Session) -> int:
                 continue
             token = f"{iscrizione.id}.{iscrizione.codice_risposta}"
             invia_sollecito_iscrizione_torneo(
-                utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile, token
+                utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token
             )
 
         torneo.stato = "SOLLECITO_INVIATO"
@@ -303,6 +307,8 @@ def job_forma_gruppi_torneo(db_pv: Session) -> int:
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
+        campionato_corrente = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        nome_campionato = _nome_campionato_leggibile(campionato_corrente)
 
         confermati = (
             db_pv.query(IscrizioneTorneo)
@@ -357,14 +363,14 @@ def job_forma_gruppi_torneo(db_pv: Session) -> int:
                     compagni_nomi = ", ".join(nomi_gruppo[c.id] for c in gruppo if c.id != candidato.id)
                     utente = utenti_per_id[candidato.id]
                     invia_gruppo_assegnato_torneo(
-                        utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile,
-                        compagni_nomi, assegnazione_lati[candidato.id],
+                        utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile,
+                        compagni_nomi,
                     )
 
         for iscrizione in riserve_iscrizioni:
             utente = db_pv.query(UtentePV).filter(UtentePV.id == iscrizione.utente_id).first()
             if utente is not None:
-                invia_sei_riserva_torneo(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+                invia_sei_riserva_torneo(utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile)
 
         if n_completi > 0:
             pdf_bytes = genera_pdf_torneo(db_pv, torneo.id)
@@ -407,11 +413,13 @@ def _prova_promuovi_prossima_riserva(db_pv: Session, torneo: Torneo, gruppo_id: 
 
     giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
     data_leggibile = torneo.data.strftime("%d/%m")
+    campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+    nome_campionato = _nome_campionato_leggibile(campionato_torneo)
 
     if candidata is None:
         gruppo = db_pv.query(GruppoPV).filter(GruppoPV.id == gruppo_id).first()
         numero_gruppo = gruppo.numero_gruppo if gruppo else 0
-        invia_notifica_admin_nessuna_riserva(giorno_leggibile, data_leggibile, numero_gruppo)
+        invia_notifica_admin_nessuna_riserva(nome_campionato, giorno_leggibile, data_leggibile, numero_gruppo)
         return False
 
     utente = db_pv.query(UtentePV).filter(UtentePV.id == candidata.utente_id).first()
@@ -422,7 +430,7 @@ def _prova_promuovi_prossima_riserva(db_pv: Session, torneo: Torneo, gruppo_id: 
 
     token = f"{candidata.id}.{candidata.codice_risposta}"
     invia_proposta_promozione_riserva(
-        utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile, token, MINUTI_TIMEOUT_PROMOZIONE_RISERVA
+        utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token, MINUTI_TIMEOUT_PROMOZIONE_RISERVA
     )
     return True
 
@@ -457,6 +465,8 @@ def richiedi_cancellazione_tardiva(db_pv: Session, iscrizione_id: int) -> dict:
 
     giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
     data_leggibile = torneo.data.strftime("%d/%m")
+    campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+    nome_campionato = _nome_campionato_leggibile(campionato_torneo)
 
     altri_membri = (
         db_pv.query(GruppoMembroPV)
@@ -466,7 +476,7 @@ def richiedi_cancellazione_tardiva(db_pv: Session, iscrizione_id: int) -> dict:
     for altro in altri_membri:
         altro_utente = db_pv.query(UtentePV).filter(UtentePV.id == altro.utente_id).first()
         if altro_utente is not None:
-            invia_avviso_gruppo_incompleto(altro_utente.whatsapp_numero, altro_utente.nome, giorno_leggibile, data_leggibile)
+            invia_avviso_gruppo_incompleto(altro_utente.whatsapp_numero, altro_utente.nome, nome_campionato, giorno_leggibile, data_leggibile)
 
     db_pv.delete(membro)
     iscrizione.stato_risposta = "RITIRATO_DOPO_GRUPPO"
@@ -516,6 +526,8 @@ def gestisci_risposta_promozione(db_pv: Session, iscrizione_id: int, accettata: 
 
     giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
     data_leggibile = torneo.data.strftime("%d/%m")
+    campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+    nome_campionato = _nome_campionato_leggibile(campionato_torneo)
 
     membri_gruppo = db_pv.query(GruppoMembroPV).filter(GruppoMembroPV.gruppo_id == gruppo_id).all()
     nomi_compagni = []
@@ -525,10 +537,10 @@ def gestisci_risposta_promozione(db_pv: Session, iscrizione_id: int, accettata: 
         compagno = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
         if compagno is not None:
             nomi_compagni.append(compagno.nome)
-            invia_sostituzione_compagno(compagno.whatsapp_numero, compagno.nome, giorno_leggibile, data_leggibile, utente.nome)
+            invia_sostituzione_compagno(compagno.whatsapp_numero, compagno.nome, nome_campionato, giorno_leggibile, data_leggibile, utente.nome)
 
     invia_promozione_confermata(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile,
-                                  ", ".join(nomi_compagni), lato_proposto)
+                                  ", ".join(nomi_compagni))
 
     return {"gestito": True, "esito": "promossa"}
 
@@ -575,6 +587,8 @@ def job_richiedi_punteggio_torneo(db_pv: Session) -> int:
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
+        campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        nome_campionato = _nome_campionato_leggibile(campionato_torneo)
 
         gruppi = db_pv.query(GruppoPV).filter(GruppoPV.torneo_id == torneo.id).all()
         for gruppo in gruppi:
@@ -584,7 +598,7 @@ def job_richiedi_punteggio_torneo(db_pv: Session) -> int:
                 if utente is None:
                     continue
                 membro.punteggio_richiesto_il = adesso
-                invia_richiesta_punteggio_torneo(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+                invia_richiesta_punteggio_torneo(utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile)
                 imposta_contesto_attivo(db_pv, utente.whatsapp_numero, "RICHIESTA_PUNTEGGIO", membro.id)
 
         torneo.stato = "RICHIESTA_PUNTEGGIO_INVIATA"
@@ -619,7 +633,9 @@ def job_sollecito_punteggio_torneo(db_pv: Session) -> int:
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
-        invia_sollecito_punteggio_torneo(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+        campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        nome_campionato = _nome_campionato_leggibile(campionato_torneo)
+        invia_sollecito_punteggio_torneo(utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile)
         # Rinnoviamo il contesto attivo: la finestra iniziale (3h) potrebbe
         # scadere prima che arrivi la risposta, specie se il sollecito
         # stesso arriva dopo 2h - senza questo rinnovo, un messaggio di
@@ -672,17 +688,6 @@ def registra_punteggio_gruppo_membro(db_pv: Session, gruppo_membro_id: int, test
     invia_punteggio_confermato(utente.whatsapp_numero, punteggio)
 
     return {"gestito": True, "punteggio": punteggio}
-
-
-def _testo_classifica(voci_ordinate: list) -> str:
-    """
-    'voci_ordinate' è una lista di tuple (utente, punti_totali), già
-    ordinata dal punteggio più alto al più basso. Righe separate da
-    " - " invece di un vero a capo, come richiesto da WhatsApp dentro
-    una singola variabile di template (vedi lezioni imparate).
-    """
-    righe = [f"{indice}. {utente.cognome} ({punti})" for indice, (utente, punti) in enumerate(voci_ordinate, start=1)]
-    return " - ".join(righe)
 
 
 def job_finalizza_punteggi_torneo(db_pv: Session) -> int:
@@ -745,27 +750,19 @@ def job_finalizza_punteggi_torneo(db_pv: Session) -> int:
 
         db_pv.commit()
 
-        # Costruisce e manda la classifica aggiornata a tutti i partecipanti del torneo
+        # Manda a tutti i partecipanti il link al PDF della classifica aggiornata
         campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         nome_campionato = _nome_campionato_leggibile(campionato)
-
-        tutte_le_voci = (
-            db_pv.query(ClassificaVoce)
-            .filter(ClassificaVoce.campionato_id == torneo.campionato_id)
-            .order_by(ClassificaVoce.punti_totali.desc())
-            .all()
-        )
-        voci_con_utente = []
-        for voce in tutte_le_voci:
-            utente_voce = db_pv.query(UtentePV).filter(UtentePV.id == voce.utente_id).first()
-            if utente_voce is not None:
-                voci_con_utente.append((utente_voce, voce.punti_totali))
-        classifica_testo = _testo_classifica(voci_con_utente)
+        giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
+        data_leggibile = torneo.data.strftime("%d/%m")
 
         for membro in membri:
             utente = db_pv.query(UtentePV).filter(UtentePV.id == membro.utente_id).first()
             if utente is not None:
-                invia_classifica_aggiornata(utente.whatsapp_numero, utente.nome, nome_campionato, classifica_testo)
+                invia_classifica_aggiornata(
+                    utente.whatsapp_numero, utente.nome, nome_campionato,
+                    giorno_leggibile, data_leggibile, torneo.campionato_id,
+                )
 
         torneo.stato = "TERMINATO"
         db_pv.commit()
@@ -807,12 +804,14 @@ def cancella_torneo(db_pv: Session, torneo_id: int) -> dict:
 
     giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
     data_leggibile = torneo.data.strftime("%d/%m")
+    campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+    nome_campionato = _nome_campionato_leggibile(campionato_torneo)
 
     iscrizioni_gia_contattate = db_pv.query(IscrizioneTorneo).filter(IscrizioneTorneo.torneo_id == torneo.id).all()
     for iscrizione in iscrizioni_gia_contattate:
         utente = db_pv.query(UtentePV).filter(UtentePV.id == iscrizione.utente_id).first()
         if utente is not None:
-            invia_torneo_annullato(utente.whatsapp_numero, utente.nome, giorno_leggibile, data_leggibile)
+            invia_torneo_annullato(utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile)
 
     torneo.attivo = False
     db_pv.commit()
