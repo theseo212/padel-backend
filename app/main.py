@@ -783,6 +783,34 @@ def cancella_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_
     return risultato
 
 
+@app.get("/palavillage/classifica/{campionato_id}")
+def scarica_classifica_palavillage_pdf(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
+    """
+    Pagina pubblica (nessuna credenziale: è solo una classifica, non un
+    dato sensibile), raggiunta dal link mandato su WhatsApp dopo ogni
+    torneo. Il PDF viene rigenerato al volo ad ogni richiesta - sempre
+    aggiornato, senza bisogno di salvare/aggiornare un file da qualche
+    parte.
+
+    Niente ".pdf" nell'indirizzo: il bottone Call to Action su Twilio
+    vuole la variabile come ULTIMA parte dell'URL, senza testo fisso
+    dopo (un ".pdf" in coda ha fatto rifiutare il template ancora prima
+    di arrivare a Meta). Il file arriva comunque correttamente come PDF
+    grazie all'intestazione Content-Disposition qui sotto, che gli dà
+    anche un nome file con estensione corretta per chi lo scarica.
+    """
+    from app.palavillage.pdf_classifica import genera_pdf_classifica
+
+    pdf_bytes = genera_pdf_classifica(db_pv, campionato_id)
+    if pdf_bytes is None:
+        raise HTTPException(status_code=404, detail="Classifica non trovata (campionato inesistente o nessuna tappa ancora giocata)")
+
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="classifica_palavillage_{campionato_id}.pdf"'},
+    )
+
+
 @app.get("/admin/palavillage", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def pagina_admin_palavillage():
     """Serve la pagina web del pannello admin Palavillage."""
