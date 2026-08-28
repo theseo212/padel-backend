@@ -2596,6 +2596,14 @@ def elimina_riga_db_palavillage(nome_tabella: str, chiavi: dict, db_pv: Session 
     return {"messaggio": "Riga eliminata con successo."}
 
 
+@app.get("/admin/palavillage/forza", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def pagina_forza_palavillage():
+    """Serve la pagina web degli strumenti di forzatura manuale del ciclo torneo."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_forza_palavillage.html")
+    return FileResponse(percorso)
+
+
 @app.get("/admin/palavillage/database", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def pagina_admin_database_palavillage():
     """Serve la pagina web del pannello database Palavillage."""
