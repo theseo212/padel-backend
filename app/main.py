@@ -2596,6 +2596,32 @@ def elimina_riga_db_palavillage(nome_tabella: str, chiavi: dict, db_pv: Session 
     return {"messaggio": "Riga eliminata con successo."}
 
 
+@app.get("/admin/palavillage/debug-config", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def debug_config_palavillage():
+    """
+    Endpoint diagnostico: mostra i valori REALI che il processo in
+    esecuzione in questo momento sta usando per le variabili
+    d'ambiente più delicate - utile per scoprire se una variabile
+    settata su Railway non sta arrivando davvero al codice (typo nel
+    nome, servizio sbagliato, deploy non applicato, ecc.) invece di
+    continuare a indovinare.
+    """
+    import os
+    from app.palavillage import config as config_pv
+
+    return {
+        "PADEL_BACKEND_URL_variabile_ambiente_grezza": os.getenv("PADEL_BACKEND_URL"),
+        "URL_BASE_BACKEND_PUBBLICO_usato_dal_codice": config_pv.URL_BASE_BACKEND_PUBBLICO,
+        "nota": (
+            "Se il primo campo è null, la variabile PADEL_BACKEND_URL non sta "
+            "arrivando affatto a questo processo (nome sbagliato, servizio "
+            "sbagliato, o deploy non ancora applicato). Se invece il primo "
+            "campo ha il valore giusto ma il secondo mostra ancora il vecchio "
+            "dominio di riserva, c'è un bug più sottile da investigare insieme."
+        ),
+    }
+
+
 @app.get("/admin/palavillage/forza", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def pagina_forza_palavillage():
     """Serve la pagina web degli strumenti di forzatura manuale del ciclo torneo."""
