@@ -101,27 +101,48 @@ def genera_tornei_futuri(db_pv: Session) -> int:
     return creati
 
 
-def job_invia_richieste_iscrizione(db_pv: Session) -> int:
+def job_invia_richieste_iscrizione(db_pv: Session, torneo_id_specifico: int | None = None, ignora_soglia_tempo: bool = False) -> int:
     """
     Per ogni torneo attivo (non annullato) ancora PROGRAMMATO il cui
     T-6gg è arrivato: manda la richiesta a tutti gli utenti attivi che
     hanno quel giorno tra le loro mattine scelte, crea le righe
     IscrizioneTorneo IN_ATTESA e sposta il torneo a RICHIESTE_INVIATE.
 
+    RECUPERO RITARDATARI: controlla anche i tornei già passati a
+    RICHIESTE_INVIATE o SOLLECITO_INVIATO, per contattare SUBITO chi si
+    iscrive a quel giorno DOPO che le richieste erano già partite -
+    altrimenti quella persona resterebbe esclusa da quel torneo per
+    sempre (il giro successivo lo riguarderebbe solo dal torneo dopo).
+    Per questi tornei "già avviati", lo stato non viene ritoccato (resta
+    RICHIESTE_INVIATE o SOLLECITO_INVIATO com'era) - si aggiungono solo
+    le nuove iscrizioni mancanti.
+
+    torneo_id_specifico e ignora_soglia_tempo esistono per permettere
+    all'admin di "forzare" manualmente questo passaggio su un singolo
+    torneo (es. per testare il ciclo senza aspettare i giorni veri) -
+    lo scheduler normale non li usa mai, chiama questa funzione senza
+    argomenti extra.
+
     Ritorna il numero di tornei elaborati in questa chiamata.
     """
     adesso = _adesso_italia()
     elaborati = 0
 
-    tornei_da_elaborare = (
-        db_pv.query(Torneo)
-        .filter(Torneo.stato == "PROGRAMMATO", Torneo.attivo == True)  # noqa: E712
-        .all()
+    query = db_pv.query(Torneo).filter(
+        Torneo.stato.in_(["PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"]),
+        Torneo.attivo == True,  # noqa: E712
     )
+    if torneo_id_specifico is not None:
+        query = query.filter(Torneo.id == torneo_id_specifico)
+    tornei_da_elaborare = query.all()
+
     for torneo in tornei_da_elaborare:
-        soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_RICHIESTA_ISCRIZIONE_PRIMA)
-        if adesso < soglia:
-            continue
+        era_ancora_da_iniziare = torneo.stato == "PROGRAMMATO"
+
+        if era_ancora_da_iniziare and not ignora_soglia_tempo:
+            soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_RICHIESTA_ISCRIZIONE_PRIMA)
+            if adesso < soglia:
+                continue
 
         bit_giorno = 1 << torneo.giorno_settimana
         utenti_da_contattare = (
@@ -138,6 +159,7 @@ def job_invia_richieste_iscrizione(db_pv: Session) -> int:
         campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         nome_campionato = _nome_campionato_leggibile(campionato)
 
+        nuovi_contattati = 0
         for utente in utenti_da_contattare:
             già_iscritto = (
                 db_pv.query(IscrizioneTorneo)
@@ -158,33 +180,39 @@ def job_invia_richieste_iscrizione(db_pv: Session) -> int:
             invia_richiesta_iscrizione_torneo(
                 utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token
             )
+            nuovi_contattati += 1
 
-        torneo.stato = "RICHIESTE_INVIATE"
-        elaborati += 1
+        if era_ancora_da_iniziare:
+            torneo.stato = "RICHIESTE_INVIATE"
+        if era_ancora_da_iniziare or nuovi_contattati > 0:
+            elaborati += 1
 
     db_pv.commit()
     return elaborati
 
 
-def job_invia_solleciti_iscrizione(db_pv: Session) -> int:
+def job_invia_solleciti_iscrizione(db_pv: Session, torneo_id_specifico: int | None = None, ignora_soglia_tempo: bool = False) -> int:
     """
     Per ogni torneo RICHIESTE_INVIATE il cui T-3gg è arrivato: rimanda un
     sollecito solo a chi ha ancora stato_risposta IN_ATTESA, poi sposta
     il torneo a SOLLECITO_INVIATO (una volta sola, non ripetuto ad ogni
     passaggio del job).
+
+    torneo_id_specifico e ignora_soglia_tempo: vedi job_invia_richieste_iscrizione.
     """
     adesso = _adesso_italia()
     elaborati = 0
 
-    tornei_da_elaborare = (
-        db_pv.query(Torneo)
-        .filter(Torneo.stato == "RICHIESTE_INVIATE", Torneo.attivo == True)  # noqa: E712
-        .all()
-    )
+    query = db_pv.query(Torneo).filter(Torneo.stato == "RICHIESTE_INVIATE", Torneo.attivo == True)  # noqa: E712
+    if torneo_id_specifico is not None:
+        query = query.filter(Torneo.id == torneo_id_specifico)
+    tornei_da_elaborare = query.all()
+
     for torneo in tornei_da_elaborare:
-        soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_SOLLECITO_ISCRIZIONE_PRIMA)
-        if adesso < soglia:
-            continue
+        if not ignora_soglia_tempo:
+            soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_SOLLECITO_ISCRIZIONE_PRIMA)
+            if adesso < soglia:
+                continue
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
@@ -285,25 +313,28 @@ def _mappa_compagni_precedenti(db_pv: Session, campionato_id: int, torneo_id_cor
     return mappa
 
 
-def job_forma_gruppi_torneo(db_pv: Session) -> int:
+def job_forma_gruppi_torneo(db_pv: Session, torneo_id_specifico: int | None = None, ignora_soglia_tempo: bool = False) -> int:
     """
     Per ogni torneo attivo il cui T-12h è arrivato: chiude le iscrizioni,
     decide titolari/riserve in base all'ordine di conferma, forma i
     gruppi da 4 con l'algoritmo di formazione_gruppi.py, li salva e manda
     i messaggi (gruppo assegnato ai titolari, "sei riserva" agli esclusi).
+
+    torneo_id_specifico e ignora_soglia_tempo: vedi job_invia_richieste_iscrizione.
     """
     adesso = _adesso_italia()
     elaborati = 0
 
-    tornei_da_elaborare = (
-        db_pv.query(Torneo)
-        .filter(Torneo.stato == "SOLLECITO_INVIATO", Torneo.attivo == True)  # noqa: E712
-        .all()
-    )
+    query = db_pv.query(Torneo).filter(Torneo.stato == "SOLLECITO_INVIATO", Torneo.attivo == True)  # noqa: E712
+    if torneo_id_specifico is not None:
+        query = query.filter(Torneo.id == torneo_id_specifico)
+    tornei_da_elaborare = query.all()
+
     for torneo in tornei_da_elaborare:
-        soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_FORMAZIONE_GRUPPI_PRIMA)
-        if adesso < soglia:
-            continue
+        if not ignora_soglia_tempo:
+            soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_FORMAZIONE_GRUPPI_PRIMA)
+            if adesso < soglia:
+                continue
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
@@ -563,27 +594,30 @@ def job_gestisci_promozioni_scadute(db_pv: Session) -> int:
     return len(scadute)
 
 
-def job_richiedi_punteggio_torneo(db_pv: Session) -> int:
+def job_richiedi_punteggio_torneo(db_pv: Session, torneo_id_specifico: int | None = None, ignora_soglia_tempo: bool = False) -> int:
     """
     Quando un torneo è "finito" (ORE_DURATA_TORNEO dopo l'inizio), chiede
     il punteggio a ogni titolare che ha davvero giocato (uno dei membri
     di uno dei gruppi). Imposta anche il "contesto attivo" per ogni
     numero, così il webhook sa interpretare il prossimo messaggio di
     testo libero come una risposta a questa domanda.
+
+    torneo_id_specifico e ignora_soglia_tempo: vedi job_invia_richieste_iscrizione.
     """
     adesso = _adesso_italia().replace(tzinfo=None)
     elaborati = 0
 
-    tornei_da_elaborare = (
-        db_pv.query(Torneo)
-        .filter(Torneo.stato.in_(["PDF_INVIATI", "GRUPPI_FORMATI"]), Torneo.attivo == True)  # noqa: E712
-        .all()
-    )
+    query = db_pv.query(Torneo).filter(Torneo.stato.in_(["PDF_INVIATI", "GRUPPI_FORMATI"]), Torneo.attivo == True)  # noqa: E712
+    if torneo_id_specifico is not None:
+        query = query.filter(Torneo.id == torneo_id_specifico)
+    tornei_da_elaborare = query.all()
+
     for torneo in tornei_da_elaborare:
-        soglia = _inizio_torneo_italia(torneo.data) + timedelta(hours=ORE_DURATA_TORNEO)
-        soglia_naive = soglia.replace(tzinfo=None)
-        if adesso < soglia_naive:
-            continue
+        if not ignora_soglia_tempo:
+            soglia = _inizio_torneo_italia(torneo.data) + timedelta(hours=ORE_DURATA_TORNEO)
+            soglia_naive = soglia.replace(tzinfo=None)
+            if adesso < soglia_naive:
+                continue
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
