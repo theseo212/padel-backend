@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Strumenti — Pannello Palavillage</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin-top: 28px; color: #333; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    nav.menu-admin {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0 20px;
+        flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none;
+        color: #444;
+        background: white;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
+    .riquadro {
+        background: white;
+        border-radius: 10px;
+        padding: 18px 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-top: 10px;
+        max-width: 560px;
+    }
+    label { font-size: 13px; font-weight: 600; color: #444; display: block; margin-bottom: 6px; }
+    input[type="number"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        font-size: 15px;
+        margin-bottom: 16px;
+    }
+    .griglia-bottoni {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    button {
+        border: none;
+        border-radius: 8px;
+        padding: 12px 10px;
+        font-size: 14px;
+        cursor: pointer;
+        font-weight: 600;
+        background: #dbeafe;
+        color: #1d4ed8;
+    }
+    button:hover { background: #c3ddfd; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #risultato {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        display: none;
+    }
+    #risultato.ok { background: #d5f2df; color: #1a7a3a; display: block; }
+    #risultato.errore { background: #fbdcdc; color: #a3231f; display: block; }
+    .nota { font-size: 12px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>🛠️ Strumenti Palavillage</h1>
+<p class="sottotitolo">Forza manualmente ogni fase del ciclo torneo, senza aspettare i tempi veri</p>
+
+<nav class="menu-admin">
+    <a href="/admin/palavillage">Pannello Palavillage</a>
+    <a href="/admin/palavillage/database">Database</a>
+    <a href="/admin/palavillage/forza" class="attivo">Strumenti</a>
+</nav>
+
+<div class="riquadro">
+    <label for="torneo-id">Id del torneo</label>
+    <input type="number" id="torneo-id" placeholder="Es. 6">
+    <p class="nota" style="margin-top:-10px; margin-bottom:16px;">Lo trovi nella tabella "tornei" del pannello Database.</p>
+
+    <div class="griglia-bottoni">
+        <button onclick="forza('forza-richieste')">1. Forza richieste iscrizione</button>
+        <button onclick="forza('forza-solleciti')">2. Forza sollecito</button>
+        <button onclick="forza('forza-formazione-gruppi')">3. Forza formazione gruppi</button>
+        <button onclick="forza('forza-richiesta-punteggio')">4. Forza richiesta punteggio</button>
+    </div>
+
+    <div id="risultato"></div>
+</div>
+
+<script>
+async function forza(azione) {
+    const id = document.getElementById('torneo-id').value;
+    const risultato = document.getElementById('risultato');
+    if (!id) {
+        risultato.className = 'errore';
+        risultato.textContent = 'Inserisci prima l\'id del torneo.';
+        return;
+    }
+
+    risultato.className = '';
+    risultato.style.display = 'none';
+
+    try {
+        const risposta = await fetch(`/admin/palavillage/tornei/${id}/${azione}`, { method: 'POST' });
+        const dati = await risposta.json();
+        risultato.className = risposta.ok ? 'ok' : 'errore';
+        risultato.textContent = JSON.stringify(dati, null, 2);
+    } catch (e) {
+        risultato.className = 'errore';
+        risultato.textContent = 'Impossibile contattare il server: ' + e.message;
+    }
+}
+</script>
+
+</body>
+</html>
