@@ -39,6 +39,7 @@ from app.matching.prenotazione import conferma_prenotazione, fallisce_prenotazio
 from app.palavillage.database import get_db_pv
 from app.palavillage.routing import gestisci_webhook_palavillage
 from app.palavillage import schemas as palavillage_schemas
+from app.palavillage import models as palavillage_models
 from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
     controlla_partite_da_segnare_automaticamente, rispondi_feedback_da_whatsapp,
@@ -2488,6 +2489,119 @@ def elimina_riga_db(nome_tabella: str, chiavi: dict, db: Session = Depends(get_d
         )
 
     return {"messaggio": "Riga eliminata con successo."}
+
+
+# =====================================================================
+# STESSO IDENTICO PANNELLO DATABASE GENERICO, MA PER PALAVILLAGE: usa il
+# SUO database (get_db_pv, non get_db) e le SUE credenziali admin
+# (verifica_credenziali_admin_palavillage) - riusa le stesse funzioni di
+# supporto qui sopra (_chiavi_primarie_tabella, _riga_a_dict_generico,
+# _converti_valore_per_colonna), che sono generiche e non dipendono da
+# quale database stanno leggendo.
+# =====================================================================
+
+TABELLE_DB_PALAVILLAGE = {
+    "utenti_pv": palavillage_models.UtentePV,
+    "campionati": palavillage_models.Campionato,
+    "tornei": palavillage_models.Torneo,
+    "iscrizioni_torneo": palavillage_models.IscrizioneTorneo,
+    "gruppi_pv": palavillage_models.GruppoPV,
+    "gruppi_membri_pv": palavillage_models.GruppoMembroPV,
+    "classifica_voci": palavillage_models.ClassificaVoce,
+    "contesto_attivo_whatsapp": palavillage_models.ContestoAttivoWhatsApp,
+}
+
+
+@app.get("/admin/palavillage/db/tabelle", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def lista_tabelle_db_palavillage():
+    """Elenco dei nomi di tutte le tabelle Palavillage gestibili da questo pannello."""
+    return sorted(TABELLE_DB_PALAVILLAGE.keys())
+
+
+@app.get("/admin/palavillage/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def leggi_tabella_db_palavillage(nome_tabella: str, db_pv: Session = Depends(get_db_pv)):
+    """Restituisce tutte le righe di una tabella Palavillage, con nomi colonne e chiavi primarie."""
+    modello = TABELLE_DB_PALAVILLAGE.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    righe = db_pv.query(modello).all()
+    return {
+        "colonne": [c.name for c in modello.__table__.columns],
+        "chiavi_primarie": _chiavi_primarie_tabella(modello),
+        "righe": [_riga_a_dict_generico(r) for r in righe],
+    }
+
+
+@app.put("/admin/palavillage/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def modifica_riga_db_palavillage(nome_tabella: str, dati: dict, db_pv: Session = Depends(get_db_pv)):
+    """Modifica una riga di una tabella Palavillage (stessa logica del pannello generico)."""
+    modello = TABELLE_DB_PALAVILLAGE.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    chiavi_primarie = _chiavi_primarie_tabella(modello)
+    chiavi_originali = dati.pop("_chiavi_originali", {})
+
+    query = db_pv.query(modello)
+    for chiave in chiavi_primarie:
+        query = query.filter(getattr(modello, chiave) == chiavi_originali.get(chiave))
+    riga = query.first()
+    if riga is None:
+        raise HTTPException(status_code=404, detail="Riga non trovata")
+
+    colonne_per_nome = {c.name: c for c in modello.__table__.columns}
+    for nome_campo, valore in dati.items():
+        if nome_campo not in colonne_per_nome:
+            continue
+        try:
+            setattr(riga, nome_campo, _converti_valore_per_colonna(colonne_per_nome[nome_campo], valore))
+        except (ValueError, TypeError) as errore:
+            raise HTTPException(status_code=400, detail=f"Valore non valido per '{nome_campo}': {errore}")
+
+    try:
+        db_pv.commit()
+    except IntegrityError as errore:
+        db_pv.rollback()
+        raise HTTPException(status_code=409, detail=f"Modifica non consentita dal database: {errore.orig}")
+
+    return {"messaggio": "Riga modificata con successo."}
+
+
+@app.delete("/admin/palavillage/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def elimina_riga_db_palavillage(nome_tabella: str, chiavi: dict, db_pv: Session = Depends(get_db_pv)):
+    """Elimina una riga di una tabella Palavillage, identificata dalle sue chiavi primarie."""
+    modello = TABELLE_DB_PALAVILLAGE.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    chiavi_primarie = _chiavi_primarie_tabella(modello)
+    query = db_pv.query(modello)
+    for chiave in chiavi_primarie:
+        query = query.filter(getattr(modello, chiave) == chiavi.get(chiave))
+    riga = query.first()
+    if riga is None:
+        raise HTTPException(status_code=404, detail="Riga non trovata")
+
+    try:
+        db_pv.delete(riga)
+        db_pv.commit()
+    except IntegrityError as errore:
+        db_pv.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Impossibile eliminare: questa riga è collegata ad altri dati ({errore.orig})"
+        )
+
+    return {"messaggio": "Riga eliminata con successo."}
+
+
+@app.get("/admin/palavillage/database", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def pagina_admin_database_palavillage():
+    """Serve la pagina web del pannello database Palavillage."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_database_palavillage.html")
+    return FileResponse(percorso)
 
 
 @app.get("/admin/database", dependencies=[Depends(verifica_credenziali_admin)])
