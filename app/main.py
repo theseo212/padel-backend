@@ -783,6 +783,44 @@ def cancella_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_
     return risultato
 
 
+@app.post("/admin/palavillage/tornei/{torneo_id}/forza-richieste", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def forza_richieste_iscrizione_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
+    """
+    Forza subito l'invio delle richieste di iscrizione per UN torneo
+    specifico, saltando l'attesa dei giorni veri (T-6gg). Utile per
+    testare il ciclo completo senza aspettare, o per dare manualmente
+    una spinta se qualcosa non fosse partito da solo. Non fa nulla se il
+    torneo non è più nello stato PROGRAMMATO (es. già elaborato).
+    """
+    from app.palavillage.motore_torneo import job_invia_richieste_iscrizione
+    n = job_invia_richieste_iscrizione(db_pv, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
+@app.post("/admin/palavillage/tornei/{torneo_id}/forza-solleciti", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def forza_solleciti_iscrizione_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
+    """Forza subito il sollecito iscrizione per un torneo specifico (richiede che le richieste iniziali siano già state mandate)."""
+    from app.palavillage.motore_torneo import job_invia_solleciti_iscrizione
+    n = job_invia_solleciti_iscrizione(db_pv, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
+@app.post("/admin/palavillage/tornei/{torneo_id}/forza-formazione-gruppi", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def forza_formazione_gruppi_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
+    """Forza subito la formazione gruppi per un torneo specifico (richiede che sia già passato dal sollecito)."""
+    from app.palavillage.motore_torneo import job_forma_gruppi_torneo
+    n = job_forma_gruppi_torneo(db_pv, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
+@app.post("/admin/palavillage/tornei/{torneo_id}/forza-richiesta-punteggio", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def forza_richiesta_punteggio_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
+    """Forza subito la richiesta punteggio per un torneo specifico (richiede che i gruppi siano già stati formati)."""
+    from app.palavillage.motore_torneo import job_richiedi_punteggio_torneo
+    n = job_richiedi_punteggio_torneo(db_pv, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
 @app.get("/palavillage/classifica/{campionato_id}")
 def scarica_classifica_palavillage_pdf(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
     """
