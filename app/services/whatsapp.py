@@ -341,3 +341,30 @@ def invia_avviso_messaggio_non_gestito_operatore(numero_mittente: str, testo_ric
     for numero in ADMIN_WHATSAPP_NUMERI:
         _invia(numero, testo_semplice, TEMPLATE_AVVISO_MESSAGGIO_NON_GESTITO, variabili,
                etichetta_simulazione=" - AVVISO MESSAGGIO NON GESTITO")
+
+
+def invia_template_grezzo_per_demo(numero_whatsapp: str, content_sid: str, variabili: dict) -> tuple[bool, str]:
+    """
+    SOLO per lo strumento demo nel pannello admin (mostrare i template a
+    chi visita, senza dover rifare tutto il giro di 4 telefoni/richieste
+    vere). A differenza di _invia, qui NON c'è nessun ripiego automatico
+    su testo libero se il template fallisce - per una demo vogliamo
+    sapere SEMPRE con certezza se il template vero è arrivato o no, non
+    un ripiego silenzioso che nasconderebbe il problema.
+    """
+    if not _TWILIO_CONFIGURATO:
+        return False, "Twilio non è configurato in questo ambiente (variabili TWILIO_* mancanti)."
+    if not content_sid:
+        return False, "Questo template non ha ancora un Content SID impostato su Railway."
+    try:
+        parametri = {
+            "from_": TWILIO_WHATSAPP_NUMBER,
+            "to": f"whatsapp:{numero_whatsapp}",
+            "content_sid": content_sid,
+        }
+        if variabili:
+            parametri["content_variables"] = json.dumps(variabili)
+        _client.messages.create(**parametri)
+        return True, ""
+    except Exception as errore:
+        return False, str(errore)
