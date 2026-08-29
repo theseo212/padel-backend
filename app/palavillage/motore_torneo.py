@@ -29,6 +29,7 @@ from app.palavillage.whatsapp_pv import (
 )
 from app.palavillage.formazione_gruppi import Candidato, forma_gruppi, assegna_lati
 from app.palavillage.pdf_torneo import genera_pdf_torneo, _nome_campionato_leggibile
+from app.palavillage.pdf_classifica import genera_pdf_classifica
 from app.palavillage.email_pv import invia_pdf_torneo_segreteria
 from app.palavillage.routing import imposta_contesto_attivo, rimuovi_contesto_attivo
 
@@ -797,6 +798,18 @@ def job_finalizza_punteggi_torneo(db_pv: Session) -> int:
                     utente.whatsapp_numero, utente.nome, nome_campionato,
                     giorno_leggibile, data_leggibile, torneo.campionato_id,
                 )
+
+        # Manda anche alla segreteria il PDF della classifica aggiornata,
+        # stesso schema già collaudato per le tabelle gruppi.
+        pdf_classifica_bytes = genera_pdf_classifica(db_pv, torneo.campionato_id)
+        if pdf_classifica_bytes is not None:
+            nome_file_classifica = f"palavillage_classifica_{nome_campionato.replace(' ', '_')}_{torneo.data.isoformat()}.pdf"
+            oggetto_classifica = f"Palavillage - Classifica aggiornata {nome_campionato} (dopo {giorno_leggibile} {data_leggibile})"
+            corpo_classifica = (
+                f"In allegato la classifica aggiornata di {nome_campionato}, dopo il torneo di "
+                f"{giorno_leggibile} {data_leggibile}."
+            )
+            invia_pdf_torneo_segreteria(pdf_classifica_bytes, nome_file_classifica, oggetto_classifica, corpo_classifica)
 
         torneo.stato = "TERMINATO"
         db_pv.commit()
