@@ -29,6 +29,7 @@ from app.services.conversione_livello import ottieni_livello_playtomic
 from app.services.whatsapp import (
     genera_otp, invia_otp_whatsapp, invia_riepilogo_richiesta,
     invia_messaggio_non_riconosciuto, invia_avviso_messaggio_non_gestito_operatore,
+    invia_template_grezzo_per_demo,
 )
 from app.services.email_service import invia_email_contatto
 from app.matching.motore import esegui_ciclo_matching
@@ -2665,3 +2666,93 @@ def pagina_admin_database():
     import os
     percorso = os.path.join(os.path.dirname(__file__), "static", "admin_database.html")
     return FileResponse(percorso)
+
+
+@app.get("/admin/demo-template", dependencies=[Depends(verifica_credenziali_admin)])
+def pagina_admin_demo_template():
+    """Serve la pagina web dello strumento demo template."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "demo_template.html")
+    return FileResponse(percorso)
+
+
+# === STRUMENTO DEMO: invio manuale di un template a un numero a piacere ===
+# Pensato per mostrare rapidamente i vari messaggi a persone interessate
+# (circoli, potenziali utenti) senza dover rifare tutto il giro reale
+# (4 telefoni, 4 richieste, conferme, ecc.) - ogni volta che serve.
+#
+# L'elenco qui sotto è scritto a mano ma rispecchia ESATTAMENTE l'ordine
+# delle variabili così come le costruisce il codice vero in
+# app/services/whatsapp.py - se in futuro cambia una funzione di invio,
+# ricontrolla/aggiorna anche questo elenco.
+TEMPLATE_DEMO_INFO = [
+    ("TEMPLATE_OTP", "OTP - Codice di verifica", ["Codice (es. 482913)"]),
+    ("TEMPLATE_RIEPILOGO", "Riepilogo richiesta", [
+        "Nome", "Tipo partita", "Giorno", "Orari", "Livello", "Lato", "Circoli", "Numero telefono (senza +, per il link)",
+    ]),
+    ("TEMPLATE_PROPOSTA_GRUPPO", "Proposta gruppo", ["Circolo", "Giorno", "Orario", "Giocatori"]),
+    ("TEMPLATE_ANNULLAMENTO", "Annullamento gruppo", ["Motivo"]),
+    ("TEMPLATE_GRUPPO_CONFERMATO", "Gruppo confermato (in attesa prenotazione)", ["Circolo", "Giorno", "Orario"]),
+    ("TEMPLATE_PRENOTAZIONE_CONFERMATA", "Prenotazione confermata", ["Circolo", "Giorno", "Orario", "Campo"]),
+    ("TEMPLATE_PRENOTAZIONE_FALLITA", "Prenotazione fallita (campo non disponibile)", ["Circolo"]),
+    ("TEMPLATE_RICHIESTA_FEEDBACK", "Richiesta feedback (voto compagno)", ["Nome compagno", "Riferimento partita (circolo + data)"]),
+    ("TEMPLATE_SOSPENSIONE", "Sospensione account", ["Giorni di sospensione (numero)"]),
+    ("TEMPLATE_PROMEMORIA_MANCATA_PARTITA", "Promemoria mancata partita", [
+        "Nome", "Giorno", "Fascia oraria", "ID richiesta (per il bottone Annulla)",
+    ]),
+    ("TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO", "Richiesta prenotazione al circolo", [
+        "Circolo", "Giorno", "Orario", "Giocatori", "Token conferma (per il bottone, es. 1.abc123)",
+    ]),
+    ("TEMPLATE_RICHIESTA_SCADUTA", "Richiesta scaduta (nessun compagno trovato)", ["Tipo partita", "Giorno", "Fascia oraria"]),
+    ("TEMPLATE_CONFERMA_BOZZA_VOCALE", "Conferma bozza da richiesta vocale", ["Giorno", "Fascia oraria"]),
+    ("TEMPLATE_MODIFICA_PREFERENZE_VOCALE", "Modifica preferenze (dopo richiesta vocale)", ["Giorno"]),
+    ("TEMPLATE_AVVISO_MESSAGGIO_NON_GESTITO", "Avviso messaggio non gestito (all'operatore)", ["Numero mittente", "Testo ricevuto"]),
+]
+
+
+@app.get("/admin/templates-demo", dependencies=[Depends(verifica_credenziali_admin)])
+def lista_template_demo():
+    """
+    Restituisce l'elenco dei template disponibili per lo strumento demo,
+    con il Content SID VERO letto in questo momento da Railway (non
+    scritto a mano qui) - così la tendina è sempre aggiornata anche se i
+    codici HX cambiano nel tempo.
+    """
+    risultato = []
+    for chiave_env, nome_leggibile, etichette_variabili in TEMPLATE_DEMO_INFO:
+        content_sid = getattr(config, chiave_env, None)
+        risultato.append({
+            "chiave": chiave_env,
+            "nome": nome_leggibile,
+            "content_sid": content_sid,
+            "configurato": bool(content_sid),
+            "variabili": etichette_variabili,
+        })
+    return risultato
+
+
+@app.post("/admin/invia-template-demo", dependencies=[Depends(verifica_credenziali_admin)])
+def invia_template_demo(dati: dict):
+    """
+    Manda un template a piacere a un numero a piacere, con le variabili
+    scritte a mano dal pannello - solo per scopo dimostrativo.
+    """
+    numero = (dati.get("numero") or "").strip()
+    content_sid = (dati.get("content_sid") or "").strip()
+    valori_variabili = dati.get("variabili") or []
+
+    if not numero:
+        raise HTTPException(status_code=400, detail="Manca il numero di telefono.")
+    if not numero.startswith("+"):
+        numero = "+" + numero.lstrip("0")
+    if not content_sid:
+        raise HTTPException(status_code=400, detail="Scegli un template dalla lista.")
+
+    # Solo i campi che l'admin ha davvero compilato, ignorando quelli
+    # lasciati vuoti (magari il template scelto ne usa meno del massimo).
+    variabili = {str(i + 1): valore for i, valore in enumerate(valori_variabili) if valore and valore.strip()}
+
+    successo, errore = invia_template_grezzo_per_demo(numero, content_sid, variabili)
+    if not successo:
+        raise HTTPException(status_code=502, detail=f"Invio fallito: {errore}")
+    return {"ok": True, "messaggio": f"Messaggio demo inviato a {numero}."}
