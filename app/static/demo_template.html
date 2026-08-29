@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Demo Template — Pannello AnnaPadel</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin-top: 24px; color: #333; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    nav.menu-admin {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0 20px;
+        flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none;
+        color: #444;
+        background: white;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
+
+    .scatola {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        max-width: 520px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        margin: 14px 0 6px;
+        color: #333;
+    }
+    select, input[type="text"] {
+        width: 100%;
+        padding: 9px 11px;
+        border: 1px solid #d5d7db;
+        border-radius: 7px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+    .campo-variabile { margin-bottom: 4px; }
+    .avviso-non-configurato {
+        color: #a3231f;
+        font-size: 12px;
+        margin-top: 4px;
+    }
+    button {
+        width: 100%;
+        margin-top: 18px;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        background: #7CB342;
+        color: white;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    button:disabled {
+        background: #b8d99b;
+        cursor: not-allowed;
+    }
+    .esito {
+        margin-top: 14px;
+        padding: 10px 12px;
+        border-radius: 7px;
+        font-size: 13px;
+    }
+    .esito.ok { background: #d5f2df; color: #1a7a3a; }
+    .esito.errore { background: #fbdcdc; color: #a3231f; }
+</style>
+</head>
+<body>
+
+<h1>🎾 Pannello Operatore</h1>
+<p class="sottotitolo">Gestione prenotazioni campi e partite giocate — AnnaPadel</p>
+
+<nav class="menu-admin">
+    <a href="/admin">Gruppi in attesa</a>
+    <a href="/admin/contatti">Messaggi dal form</a>
+    <a href="/admin/circoli">Gestione Circoli</a>
+    <a href="/admin/report">Report Partite</a>
+    <a href="/admin/database">Database</a>
+    <a href="/admin/demo-template" class="attivo">Demo Template</a>
+</nav>
+
+<h2>Invia un template a un numero a piacere</h2>
+<p class="sottotitolo">
+    Utile per far vedere rapidamente i messaggi a chi è interessato, senza rifare tutto il giro reale.
+</p>
+
+<div class="scatola">
+    <label for="numero">Numero di telefono (con prefisso, es. +393331234567)</label>
+    <input type="text" id="numero" placeholder="+393331234567">
+
+    <label for="template">Template</label>
+    <select id="template" onchange="cambiaTemplate()">
+        <option value="">Scegli un template…</option>
+    </select>
+    <div id="avviso-configurazione"></div>
+
+    <div id="contenitore-variabili"></div>
+
+    <button id="bottone-invia" onclick="invia()" disabled>Invia messaggio demo</button>
+    <div id="esito"></div>
+</div>
+
+<script>
+let templateAttuali = [];
+
+async function caricaTemplate() {
+    try {
+        const risposta = await fetch('/admin/templates-demo');
+        templateAttuali = await risposta.json();
+        const select = document.getElementById('template');
+        templateAttuali.forEach((t, indice) => {
+            const opzione = document.createElement('option');
+            opzione.value = indice;
+            opzione.textContent = t.configurato ? t.nome : `${t.nome} (non configurato)`;
+            select.appendChild(opzione);
+        });
+    } catch (e) {
+        document.getElementById('esito').innerHTML = `<div class="esito errore">Impossibile caricare l'elenco template: ${e.message}</div>`;
+    }
+}
+
+function cambiaTemplate() {
+    const indice = document.getElementById('template').value;
+    const contenitore = document.getElementById('contenitore-variabili');
+    const avviso = document.getElementById('avviso-configurazione');
+    const bottone = document.getElementById('bottone-invia');
+    contenitore.innerHTML = '';
+    avviso.innerHTML = '';
+
+    if (indice === '') {
+        bottone.disabled = true;
+        return;
+    }
+
+    const t = templateAttuali[indice];
+    if (!t.configurato) {
+        avviso.innerHTML = `<p class="avviso-non-configurato">⚠️ Questo template non ha ancora un Content SID impostato su Railway (variabile ${t.chiave}).</p>`;
+    }
+
+    t.variabili.forEach((etichetta, i) => {
+        contenitore.innerHTML += `
+            <div class="campo-variabile">
+                <label for="var-${i}">${etichetta}</label>
+                <input type="text" id="var-${i}" placeholder="${etichetta}">
+            </div>
+        `;
+    });
+
+    bottone.disabled = false;
+}
+
+async function invia() {
+    const numero = document.getElementById('numero').value.trim();
+    const indice = document.getElementById('template').value;
+    const esitoDiv = document.getElementById('esito');
+    esitoDiv.innerHTML = '';
+
+    if (!numero) {
+        esitoDiv.innerHTML = '<div class="esito errore">Scrivi un numero di telefono.</div>';
+        return;
+    }
+    if (indice === '') {
+        esitoDiv.innerHTML = '<div class="esito errore">Scegli un template.</div>';
+        return;
+    }
+
+    const t = templateAttuali[indice];
+    const variabili = t.variabili.map((_, i) => document.getElementById(`var-${i}`).value);
+
+    const bottone = document.getElementById('bottone-invia');
+    bottone.disabled = true;
+    bottone.textContent = 'Invio in corso…';
+
+    try {
+        const risposta = await fetch('/admin/invia-template-demo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ numero, content_sid: t.content_sid, variabili }),
+        });
+        const dati = await risposta.json();
+        if (risposta.ok) {
+            esitoDiv.innerHTML = `<div class="esito ok">✅ ${dati.messaggio}</div>`;
+        } else {
+            esitoDiv.innerHTML = `<div class="esito errore">${dati.detail || 'Invio non riuscito.'}</div>`;
+        }
+    } catch (e) {
+        esitoDiv.innerHTML = `<div class="esito errore">Impossibile contattare il server: ${e.message}</div>`;
+    } finally {
+        bottone.disabled = false;
+        bottone.textContent = 'Invia messaggio demo';
+    }
+}
+
+caricaTemplate();
+</script>
+
+</body>
+</html>
