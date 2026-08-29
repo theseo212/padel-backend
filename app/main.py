@@ -1027,10 +1027,10 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
         "RITIRATO_DOPO_GRUPPO": "Hai annullato la tua partecipazione a questo torneo.",
     }
     testo_esito = messaggi_esito.get(iscrizione.stato_risposta, "Questa iscrizione è già stata gestita.")
-    return _pagina_conferma_circolo_html(
-        "Già gestito",
-        f"<p class='esito ok'>{testo_esito} Non c'è più nulla da fare qui.</p>",
-    )
+    corpo_esito = f"<p class='esito ok'>{testo_esito} Non c'è più nulla da fare qui.</p>"
+    if iscrizione.stato_risposta == "CONFERMATO":
+        corpo_esito += "<img src='/pubblico/anna_palavillage_icona.png' alt='Anna' class='foto-anna'>"
+    return _pagina_conferma_circolo_html("Già gestito", corpo_esito)
 
 
 @app.post("/palavillage/rispondi/{token}")
@@ -1055,7 +1055,11 @@ async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request,
     if azione in ("conferma_promozione", "rifiuto_promozione"):
         risultato = gestisci_risposta_promozione(db_pv, iscrizione.id, accettata=(azione == "conferma_promozione"))
         if risultato.get("esito") == "promossa":
-            corpo = f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! Controlla WhatsApp per i dettagli del gruppo.</p>"
+            corpo = (
+                f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! "
+                f"Controlla WhatsApp per i dettagli del gruppo.</p>"
+                f"<img src='/pubblico/anna_palavillage_icona.png' alt='Anna' class='foto-anna'>"
+            )
         elif not risultato.get("gestito") and risultato.get("motivo") == "proposta_scaduta":
             corpo = "<p class='esito errore'>Il tempo per confermare questo posto è scaduto, è stato riproposto a qualcun altro.</p>"
         else:
@@ -1075,10 +1079,13 @@ async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request,
     # Casi originari: prima risposta conferma/rifiuto
     if iscrizione.stato_risposta != "IN_ATTESA":
         esito_leggibile = "confermata la partecipazione" if iscrizione.stato_risposta == "CONFERMATO" else "segnalata l'assenza"
-        return _pagina_conferma_circolo_html(
-            "Già risposto",
-            f"<p class='esito ok'>✅ Hai già {esito_leggibile} per il torneo di {giorno_leggibile} {data_leggibile} (magari da un altro dispositivo), non c'è più nulla da fare qui.</p>",
+        corpo_gia_risposto = (
+            f"<p class='esito ok'>✅ Hai già {esito_leggibile} per il torneo di {giorno_leggibile} {data_leggibile} "
+            f"(magari da un altro dispositivo), non c'è più nulla da fare qui.</p>"
         )
+        if iscrizione.stato_risposta == "CONFERMATO":
+            corpo_gia_risposto += "<img src='/pubblico/anna_palavillage_icona.png' alt='Anna' class='foto-anna'>"
+        return _pagina_conferma_circolo_html("Già risposto", corpo_gia_risposto)
 
     confermato = azione == "conferma"
     risultato = gestisci_risposta_bottone_iscrizione(db_pv, iscrizione.id, confermato=confermato)
