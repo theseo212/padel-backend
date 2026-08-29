@@ -1585,6 +1585,9 @@ def _pagina_annapadel_html(titolo: str, corpo: str) -> Response:
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{titolo} - AnnaPadel</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&display=swap" rel="stylesheet">
         <style>
             body {{ font-family: -apple-system, sans-serif; background: #f6f7f8;
                     display: flex; align-items: center; justify-content: center;
@@ -1592,8 +1595,8 @@ def _pagina_annapadel_html(titolo: str, corpo: str) -> Response:
             .contenitore {{ max-width: 420px; width: 100%; }}
             .marchio {{ display: flex; align-items: center; justify-content: center;
                      gap: 8px; margin-bottom: 14px; }}
-            .marchio-nome {{ font-family: Georgia, serif; font-weight: 700; font-size: 20px;
-                     color: #1B3A63; letter-spacing: 0.3px; }}
+            .marchio-nome {{ font-family: "Fredoka", -apple-system, sans-serif; font-weight: 600; font-size: 22px;
+                     color: #1B3A63; }}
             .box {{ background: white; padding: 28px; border-radius: 12px;
                      width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); box-sizing: border-box; }}
             h1 {{ font-size: 19px; color: #1B3A63; margin: 0 0 6px; }}
