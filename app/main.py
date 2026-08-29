@@ -13,6 +13,7 @@ import csv
 import io
 
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
 from fastapi.responses import FileResponse, Response
@@ -47,6 +48,18 @@ from app.matching.feedback import (
 from app.matching.promemoria_disponibilita import controlla_promemoria_mancata_partita, controlla_richieste_scadute
 
 app = FastAPI(title="AnnaPadel")
+
+# Cartella pubblica per immagini/risorse senza autenticazione (es. la foto
+# di Anna nelle pagine di conferma) - separata di proposito dal resto di
+# app/static/, dove vivono le pagine admin: qui non deve MAI finire nulla
+# che richieda credenziali, perché tutto ciò che sta qui dentro è
+# raggiungibile da chiunque conosca l'indirizzo.
+import os as _os_modulo
+app.mount(
+    "/pubblico",
+    StaticFiles(directory=_os_modulo.path.join(_os_modulo.path.dirname(__file__), "static", "pubblico")),
+    name="pubblico",
+)
 
 # CORS: permette al form pubblico (che gira su un dominio/porta diversa)
 # di chiamare questa API dal browser. In sviluppo locale, se la variabile
@@ -1075,7 +1088,13 @@ async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request,
         )
 
     if confermato:
-        corpo = f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! Ti scriverò con i dettagli del gruppo.</p>"
+        from app.palavillage.config import ORE_FORMAZIONE_GRUPPI_PRIMA
+        corpo = (
+            f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! "
+            f"Ti scriverò su WhatsApp un promemoria {ORE_FORMAZIONE_GRUPPI_PRIMA} ore prima con tutti i dettagli "
+            f"del tuo gruppo. Un saluto da Anna.</p>"
+            f"<img src='/pubblico/anna_palavillage_icona.png' alt='Anna' class='foto-anna'>"
+        )
     else:
         corpo = f"<p class='esito ok'>Ok, ho segnato che non ci sarai {giorno_leggibile} {data_leggibile}. A presto!</p>"
     return _pagina_conferma_circolo_html("Risposta registrata", corpo)
@@ -1529,6 +1548,8 @@ def _pagina_conferma_circolo_html(titolo: str, corpo: str) -> Response:
             .esito {{ font-size: 16px; font-weight: 600; }}
             .esito.ok {{ color: #1a7a3a; }}
             .esito.errore {{ color: #a3231f; }}
+            .foto-anna {{ display: block; max-width: 140px; width: 100%; height: auto;
+                     border-radius: 50%; margin: 18px auto 4px; }}
         </style>
     </head>
     <body>
