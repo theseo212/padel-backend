@@ -1571,6 +1571,62 @@ def _pagina_conferma_circolo_html(titolo: str, corpo: str) -> Response:
     return Response(content=html, media_type="text/html")
 
 
+def _pagina_annapadel_html(titolo: str, corpo: str) -> Response:
+    """
+    Stile DEDICATO solo alle pagine di AnnaPadel (conferma prenotazione
+    circolo, reale e demo) - volutamente SEPARATO dalla funzione condivisa
+    sopra (usata anche da Palavillage), per non rischiare di mettere il
+    marchio AnnaPadel anche sulle loro pagine.
+    """
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="it">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{titolo} - AnnaPadel</title>
+        <style>
+            body {{ font-family: -apple-system, sans-serif; background: #f6f7f8;
+                    display: flex; align-items: center; justify-content: center;
+                    min-height: 100vh; margin: 0; padding: 20px; }}
+            .contenitore {{ max-width: 420px; width: 100%; }}
+            .marchio {{ display: flex; align-items: center; justify-content: center;
+                     gap: 8px; margin-bottom: 14px; }}
+            .marchio-nome {{ font-family: Georgia, serif; font-weight: 700; font-size: 20px;
+                     color: #1B3A63; letter-spacing: 0.3px; }}
+            .box {{ background: white; padding: 28px; border-radius: 12px;
+                     width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); box-sizing: border-box; }}
+            h1 {{ font-size: 19px; color: #1B3A63; margin: 0 0 6px; }}
+            p {{ color: #444; font-size: 14px; line-height: 1.5; }}
+            .dettaglio {{ margin: 4px 0; }}
+            label {{ display: block; font-size: 13px; font-weight: 600; margin: 16px 0 6px; color: #333; }}
+            input[type="text"] {{ width: 100%; padding: 10px 12px; border: 1px solid #d5d7db;
+                     border-radius: 8px; font-size: 15px; box-sizing: border-box; }}
+            button {{ width: 100%; padding: 13px; border: none; border-radius: 8px;
+                       font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 10px; }}
+            .btn-conferma {{ background: #7CB342; color: white; }}
+            .btn-fallita {{ background: #fbdcdc; color: #a3231f; }}
+            .esito {{ font-size: 16px; font-weight: 600; }}
+            .esito.ok {{ color: #1a7a3a; }}
+            .esito.errore {{ color: #a3231f; }}
+        </style>
+    </head>
+    <body>
+        <div class="contenitore">
+            <div class="marchio">
+                🎾 <span class="marchio-nome">AnnaPadel</span>
+            </div>
+            <div class="box">
+                <h1>{titolo}</h1>
+                {corpo}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return Response(content=html, media_type="text/html")
+
+
 def _carica_gruppo_da_token(token: str, db: Session):
     """
     Divide il token nel suo id gruppo + codice, e verifica che il codice
@@ -1628,11 +1684,11 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
                 <button type="submit" name="azione" value="non_disponibile" class="btn-fallita">Campo non disponibile</button>
             </form>
         """
-        return _pagina_conferma_circolo_html("Conferma prenotazione campo (ESEMPIO)", corpo_demo)
+        return _pagina_annapadel_html("Conferma prenotazione campo (ESEMPIO)", corpo_demo)
 
     gruppo, _ = _carica_gruppo_da_token(token, db)
     if gruppo is None:
-        return _pagina_conferma_circolo_html(
+        return _pagina_annapadel_html(
             "Link non valido",
             "<p>Questo link non è valido, o si riferisce a una richiesta che non esiste più.</p>",
         )
@@ -1655,7 +1711,7 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
     if gruppo.stato != "CONFERMATO":
         # Qualcuno (il circolo stesso da un altro dispositivo, o
         # l'operatore dal pannello) ha già gestito questo gruppo.
-        return _pagina_conferma_circolo_html(
+        return _pagina_annapadel_html(
             "Già gestito",
             "<p class='esito ok'>✅ Questa prenotazione è già stata gestita in precedenza, non c'è più nulla da fare qui.</p>",
         )
@@ -1674,7 +1730,7 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
             <button type="submit" name="azione" value="non_disponibile" class="btn-fallita">Campo non disponibile</button>
         </form>
     """
-    return _pagina_conferma_circolo_html("Conferma prenotazione campo", corpo)
+    return _pagina_annapadel_html("Conferma prenotazione campo", corpo)
 
 
 @app.post("/circolo/conferma/{token}")
@@ -1683,13 +1739,13 @@ async def gestisci_conferma_circolo(token: str, request: Request, db: Session = 
         corpo_form = await request.form()
         azione = corpo_form.get("azione")
         if azione == "conferma":
-            return _pagina_conferma_circolo_html(
+            return _pagina_annapadel_html(
                 "Esempio completato",
                 "<p class='esito ok'>✅ In un caso reale, qui i 4 giocatori riceverebbero subito la conferma "
                 "della prenotazione su WhatsApp. (Questa è solo una demo: nessuna azione reale è stata eseguita.)</p>",
             )
         else:
-            return _pagina_conferma_circolo_html(
+            return _pagina_annapadel_html(
                 "Esempio completato",
                 "<p class='esito ok'>In un caso reale, qui i 4 giocatori verrebbero avvisati che il campo non era "
                 "disponibile, e rimessi automaticamente in ricerca. (Questa è solo una demo: nessuna azione reale è stata eseguita.)</p>",
@@ -1697,13 +1753,13 @@ async def gestisci_conferma_circolo(token: str, request: Request, db: Session = 
 
     gruppo, _ = _carica_gruppo_da_token(token, db)
     if gruppo is None:
-        return _pagina_conferma_circolo_html(
+        return _pagina_annapadel_html(
             "Link non valido",
             "<p>Questo link non è valido, o si riferisce a una richiesta che non esiste più.</p>",
         )
 
     if gruppo.stato != "CONFERMATO":
-        return _pagina_conferma_circolo_html(
+        return _pagina_annapadel_html(
             "Già gestito",
             "<p class='esito ok'>✅ Questa prenotazione è già stata gestita in precedenza (magari da un'altra persona), non c'è più nulla da fare qui.</p>",
         )
@@ -1716,7 +1772,7 @@ async def gestisci_conferma_circolo(token: str, request: Request, db: Session = 
     if orario_effettivo:
         import re
         if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", orario_effettivo):
-            return _pagina_conferma_circolo_html(
+            return _pagina_annapadel_html(
                 "Formato orario non valido",
                 "<p class='esito errore'>L'orario va scritto nel formato HH:MM, per esempio 16:30. Torna indietro e riprova.</p>",
             )
@@ -1724,20 +1780,20 @@ async def gestisci_conferma_circolo(token: str, request: Request, db: Session = 
     try:
         if azione == "conferma":
             conferma_prenotazione(db, gruppo.id, numero_campo=numero_campo, orario_effettivo=orario_effettivo)
-            return _pagina_conferma_circolo_html(
+            return _pagina_annapadel_html(
                 "Fatto!",
                 "<p class='esito ok'>✅ Prenotazione confermata, i 4 giocatori sono stati avvisati. Grazie!</p>",
             )
         elif azione == "non_disponibile":
             fallisce_prenotazione(db, gruppo.id)
-            return _pagina_conferma_circolo_html(
+            return _pagina_annapadel_html(
                 "Segnalato",
                 "<p class='esito ok'>Grazie per la segnalazione: i 4 giocatori sono stati avvisati e verranno rimessi in ricerca automaticamente.</p>",
             )
         else:
-            return _pagina_conferma_circolo_html("Errore", "<p class='esito errore'>Azione non riconosciuta.</p>")
+            return _pagina_annapadel_html("Errore", "<p class='esito errore'>Azione non riconosciuta.</p>")
     except ValueError as errore:
-        return _pagina_conferma_circolo_html("Errore", f"<p class='esito errore'>{errore}</p>")
+        return _pagina_annapadel_html("Errore", f"<p class='esito errore'>{errore}</p>")
 
 
 @app.post("/matching/esegui-ora", dependencies=[Depends(verifica_credenziali_admin)])
