@@ -1548,8 +1548,8 @@ def _pagina_conferma_circolo_html(titolo: str, corpo: str) -> Response:
             .esito {{ font-size: 16px; font-weight: 600; }}
             .esito.ok {{ color: #1a7a3a; }}
             .esito.errore {{ color: #a3231f; }}
-            .foto-anna {{ display: block; max-width: 140px; width: 100%; height: auto;
-                     border-radius: 50%; margin: 18px auto 4px; }}
+            .foto-anna {{ display: block; max-width: 170px; width: 100%; height: auto;
+                     border-radius: 18px; margin: 18px auto 4px; }}
         </style>
     </head>
     <body>
