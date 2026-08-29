@@ -1611,7 +1611,11 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
         corpo_demo = """
             <p class="dettaglio"><strong>Circolo:</strong> Circolo Esempio</p>
             <p class="dettaglio"><strong>Giorno:</strong> 2026-08-30 alle 18:30</p>
-            <p class="dettaglio"><strong>Giocatori:</strong> Mario Rossi, Luisa Bianchi, Paolo Verdi, Anna Neri</p>
+            <p class="dettaglio"><strong>Giocatori:</strong></p>
+            <div style="margin:4px 0;">Mario Rossi: +393331112233 (disp. 17:00-21:00)</div>
+            <div style="margin:4px 0;">Luisa Bianchi: +393332223344 (disp. 18:00-22:00)</div>
+            <div style="margin:4px 0;">Paolo Verdi: +393333334455 (disp. 16:00-20:00)</div>
+            <div style="margin:4px 0;">Anna Neri: +393334445566 (disp. 17:30-21:30)</div>
             <p style="color:#a3231f; font-weight:600; margin-top:16px; font-size:13px;">
                 ⚠️ Questa è una pagina di esempio (demo): nessuna azione qui avrà effetto reale.
             </p>
@@ -1635,7 +1639,18 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
 
     circolo = db.query(models.Circolo).filter(models.Circolo.id == gruppo.circolo_id).first()
     orario = _orario_leggibile_gruppo(gruppo.slot_inizio)
-    nomi_giocatori = ", ".join(f"{m.utente.nome} {m.utente.cognome}" for m in gruppo.membri)
+
+    # Stesso principio già usato nel messaggio WhatsApp: numero e fascia
+    # oraria dichiarata da ciascun giocatore, utili al circolo per un
+    # eventuale contatto diretto o un piccolo spostamento d'orario.
+    righe_giocatori_html = ""
+    for m in gruppo.membri:
+        richiesta_membro = db.query(models.Richiesta).filter(models.Richiesta.id == m.richiesta_id).first()
+        fascia = ", ".join(bitmask_a_fasce_leggibili(richiesta_membro.disponibilita_bitmask)) if richiesta_membro else "?"
+        righe_giocatori_html += (
+            f"<div style='margin:4px 0;'>{m.utente.nome} {m.utente.cognome}: "
+            f"{m.utente.whatsapp_numero} (disp. {fascia})</div>"
+        )
 
     if gruppo.stato != "CONFERMATO":
         # Qualcuno (il circolo stesso da un altro dispositivo, o
@@ -1648,7 +1663,8 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
     corpo = f"""
         <p class="dettaglio"><strong>Circolo:</strong> {circolo.nome}</p>
         <p class="dettaglio"><strong>Giorno:</strong> {gruppo.giorno} alle {orario}</p>
-        <p class="dettaglio"><strong>Giocatori:</strong> {nomi_giocatori}</p>
+        <p class="dettaglio"><strong>Giocatori:</strong></p>
+        {righe_giocatori_html}
         <form method="POST" action="/circolo/conferma/{token}">
             <label for="numero_campo">Numero campo (facoltativo)</label>
             <input type="text" id="numero_campo" name="numero_campo" placeholder="es. 3">
