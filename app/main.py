@@ -1603,6 +1603,29 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
     campo non è disponibile. Il token stesso, con il suo codice casuale,
     fa da chiave d'accesso privata.
     """
+    if token == "demo":
+        # Scorciatoia SOLO per mostrare la pagina a chi è interessato
+        # (circoli, potenziali utenti) senza toccare dati veri nel
+        # database - usa "demo" come Token conferma nello strumento di
+        # invio demo del pannello admin.
+        corpo_demo = """
+            <p class="dettaglio"><strong>Circolo:</strong> Circolo Esempio</p>
+            <p class="dettaglio"><strong>Giorno:</strong> 2026-08-30 alle 18:30</p>
+            <p class="dettaglio"><strong>Giocatori:</strong> Mario Rossi, Luisa Bianchi, Paolo Verdi, Anna Neri</p>
+            <p style="color:#a3231f; font-weight:600; margin-top:16px; font-size:13px;">
+                ⚠️ Questa è una pagina di esempio (demo): nessuna azione qui avrà effetto reale.
+            </p>
+            <form method="POST" action="/circolo/conferma/demo">
+                <label for="numero_campo">Numero campo (facoltativo)</label>
+                <input type="text" id="numero_campo" name="numero_campo" placeholder="es. 3">
+                <label for="orario_effettivo">Hai dovuto spostare l'orario? (facoltativo)</label>
+                <input type="text" id="orario_effettivo" name="orario_effettivo" placeholder="es. 16:30">
+                <button type="submit" name="azione" value="conferma" class="btn-conferma">Conferma prenotazione</button>
+                <button type="submit" name="azione" value="non_disponibile" class="btn-fallita">Campo non disponibile</button>
+            </form>
+        """
+        return _pagina_conferma_circolo_html("Conferma prenotazione campo (ESEMPIO)", corpo_demo)
+
     gruppo, _ = _carica_gruppo_da_token(token, db)
     if gruppo is None:
         return _pagina_conferma_circolo_html(
@@ -1640,6 +1663,22 @@ def pagina_conferma_circolo(token: str, db: Session = Depends(get_db)):
 
 @app.post("/circolo/conferma/{token}")
 async def gestisci_conferma_circolo(token: str, request: Request, db: Session = Depends(get_db)):
+    if token == "demo":
+        corpo_form = await request.form()
+        azione = corpo_form.get("azione")
+        if azione == "conferma":
+            return _pagina_conferma_circolo_html(
+                "Esempio completato",
+                "<p class='esito ok'>✅ In un caso reale, qui i 4 giocatori riceverebbero subito la conferma "
+                "della prenotazione su WhatsApp. (Questa è solo una demo: nessuna azione reale è stata eseguita.)</p>",
+            )
+        else:
+            return _pagina_conferma_circolo_html(
+                "Esempio completato",
+                "<p class='esito ok'>In un caso reale, qui i 4 giocatori verrebbero avvisati che il campo non era "
+                "disponibile, e rimessi automaticamente in ricerca. (Questa è solo una demo: nessuna azione reale è stata eseguita.)</p>",
+            )
+
     gruppo, _ = _carica_gruppo_da_token(token, db)
     if gruppo is None:
         return _pagina_conferma_circolo_html(
