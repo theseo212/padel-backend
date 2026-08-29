@@ -66,4 +66,11 @@ GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO = 14 # quante giornate future tenere sempr
 MINUTI_TIMEOUT_PROMOZIONE_RISERVA = 30     # tempo dato a una riserva per confermare dopo una cancellazione tardiva
 
 # === CONTESTO ATTIVO WHATSAPP (routing testo libero) ===
-MINUTI_VALIDITA_CONTESTO_ATTIVO = 180  # oltre questa finestra, si considera scaduto
+MINUTI_VALIDITA_CONTESTO_ATTIVO = 1500  # oltre questa finestra, si considera scaduto
+# 25 ore: deve coprire tutta la finestra realistica in cui un giocatore
+# può rispondere con il punteggio (fino alle ORE_CHIUSURA_FORZATA_PUNTEGGIO
+# = 24h), altrimenti chi risponde tardi (ma comunque entro un giorno) si
+# vede il messaggio scorrere verso il sistema generico invece di essere
+# riconosciuto come risposta al punteggio - bug reale scoperto durante
+# un test: 2 giocatori su 4 hanno risposto dopo 12h+ e non sono stati
+# riconosciuti, con le 3 ore (180 minuti) di validità precedenti.
