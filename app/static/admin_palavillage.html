@@ -87,6 +87,9 @@
     .riga-campionato-nome input[type="text"]:not(.input-orario) {
         padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; flex: 1 1 180px;
     }
+    .riga-campionato-nome select {
+        padding: 6px 6px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px;
+    }
     .input-orario {
         padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; width: 72px;
     }
@@ -246,7 +249,7 @@ async function cancellaTorneo(id) {
     }
 }
 
-const NOMI_GIORNI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì'];
+const NOMI_GIORNI = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
 
 async function caricaCampionati() {
     try {
@@ -267,12 +270,16 @@ function renderizzaTabellaCampionati(campionati) {
     }
     const righe = campionati.map(c => {
         const classeBadge = c.stato === 'APERTO' ? 'badge-terminato' : 'badge-programmato';
+        const opzioniGiorno = NOMI_GIORNI.map((nome, indice) =>
+            `<option value="${indice}" ${indice === c.giorno_settimana ? 'selected' : ''}>${nome}</option>`
+        ).join('');
         return `
             <tr>
-                <td>${NOMI_GIORNI[c.giorno_settimana]} — edizione #${c.numero_edizione}</td>
+                <td>Campionato ${c.slot} — edizione #${c.numero_edizione}</td>
                 <td>
                     <div class="riga-campionato-nome">
                         <input type="text" id="nome-campionato-${c.id}" value="${c.nome || ''}" placeholder="${c.nome_visualizzato}">
+                        <select id="giorno-campionato-${c.id}" ${c.stato !== 'APERTO' ? 'disabled' : ''}>${opzioniGiorno}</select>
                         <input type="text" class="input-orario" id="orario-inizio-${c.id}" value="${c.orario_inizio || ''}" placeholder="12:00" title="Orario inizio (HH:MM)">
                         <input type="text" class="input-orario" id="orario-fine-${c.id}" value="${c.orario_fine || ''}" placeholder="13:30" title="Orario fine (HH:MM, facoltativo)">
                         <button class="btn-blu" onclick="salvaNomeCampionato(${c.id})">Salva</button>
@@ -295,17 +302,18 @@ function renderizzaTabellaCampionati(campionati) {
 
 async function salvaNomeCampionato(id) {
     const nuovoNome = document.getElementById(`nome-campionato-${id}`).value.trim();
+    const nuovoGiorno = document.getElementById(`giorno-campionato-${id}`).value;
     const orarioInizio = document.getElementById(`orario-inizio-${id}`).value.trim();
     const orarioFine = document.getElementById(`orario-fine-${id}`).value.trim();
     try {
         const risposta = await fetch(`/admin/palavillage/campionati/${id}/nome`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome: nuovoNome, orario_inizio: orarioInizio, orario_fine: orarioFine }),
+            body: JSON.stringify({ nome: nuovoNome, giorno_settimana: nuovoGiorno, orario_inizio: orarioInizio, orario_fine: orarioFine }),
         });
         const dati = await risposta.json();
         if (!risposta.ok) throw new Error(dati.detail || 'Errore nel salvataggio');
-        mostraMessaggio('msg-campionati', 'Nome e orario aggiornati.', 'ok');
+        mostraMessaggio('msg-campionati', 'Nome, giorno e orario aggiornati.', 'ok');
         caricaCampionati();
     } catch (e) {
         mostraMessaggio('msg-campionati', e.message, 'errore');
