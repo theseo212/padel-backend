@@ -919,6 +919,19 @@ def cancella_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_
     return risultato
 
 
+@app.post("/admin/palavillage/forza-genera-tornei", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def forza_genera_tornei_palavillage(db_pv: Session = Depends(get_db_pv)):
+    """
+    Forza subito la generazione dei prossimi tornei (normalmente gira da
+    sola ogni ora) - utile appena configuri o cambi i campionati, per
+    non dover aspettare fino a un'ora prima di vedere comparire i primi
+    tornei nella tabella.
+    """
+    from app.palavillage.motore_torneo import genera_tornei_futuri
+    n = genera_tornei_futuri(db_pv)
+    return {"ok": True, "tornei_creati": n}
+
+
 @app.post("/admin/palavillage/tornei/{torneo_id}/forza-richieste", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
 def forza_richieste_iscrizione_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
     """
