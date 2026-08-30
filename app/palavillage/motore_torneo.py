@@ -474,7 +474,9 @@ def _prova_promuovi_prossima_riserva(db_pv: Session, torneo: Torneo, gruppo_id: 
 
     token = f"{candidata.id}.{candidata.codice_risposta}"
     invia_proposta_promozione_riserva(
-        utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token, MINUTI_TIMEOUT_PROMOZIONE_RISERVA
+        utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token, MINUTI_TIMEOUT_PROMOZIONE_RISERVA,
+        orario_inizio=campionato_torneo.orario_inizio if campionato_torneo else None,
+        orario_fine=campionato_torneo.orario_fine if campionato_torneo else None,
     )
     return True
 

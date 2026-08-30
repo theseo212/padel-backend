@@ -73,13 +73,10 @@ def invia_richiesta_iscrizione_torneo(numero_whatsapp: str, nome: str, nome_torn
     di ogni singola iscrizione (vedi commento su IscrizioneTorneo.codice_risposta).
 
     orario_inizio/orario_fine: se il campionato ha un orario impostato
-    dall'admin, arriva qui e finisce nel testo ("alle 12:00-13:30").
-    ATTENZIONE: nei template Twilio GIÀ approvati questa non è ancora
-    una variabile prevista - arriva SOLO nel testo di riserva (quello
-    usato in simulazione, o se il template non è configurato). Per
-    farla comparire anche nel vero messaggio approvato da Meta, va
-    aggiunta una nuova variabile al template e risottomesso (stessa
-    procedura già vista altre volte in questo progetto).
+    dall'admin, arriva qui e finisce nel testo ("alle 12:00-13:30") E
+    come vera variabile del template ({{5}}) - una volta che il
+    template su Twilio avrà quella variabile e sarà stato risottomesso
+    per l'approvazione (stessa procedura già vista altre volte).
     """
     url_risposta = f"{URL_BASE_BACKEND_PUBBLICO}/palavillage/rispondi/{token}"
     fascia_oraria = _fascia_oraria_leggibile(orario_inizio, orario_fine)
@@ -90,7 +87,7 @@ def invia_richiesta_iscrizione_torneo(numero_whatsapp: str, nome: str, nome_torn
     # Il template Twilio (Call to Action) ha già l'indirizzo di base
     # scritto al suo interno: la sola variabile dinamica nel bottone è
     # il token (ultima variabile, {{6}}).
-    variabili = {"1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile, "5": nome_circolo, "6": token} if nome else None
+    variabili = {"1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile, "5": fascia_oraria, "6": nome_circolo, "7": token} if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PV_RICHIESTA_ISCRIZIONE, variabili,
                   etichetta_simulazione=" PALAVILLAGE - RICHIESTA ISCRIZIONE")
 
@@ -106,7 +103,7 @@ def invia_sollecito_iscrizione_torneo(numero_whatsapp: str, nome: str, nome_torn
         f"{giorno_leggibile} {data_leggibile}{fascia_oraria} a {nome_circolo}: confermi la tua partecipazione? "
         f"Rispondi qui: {url_risposta}"
     ) + FIRMA_MESSAGGIO
-    variabili = {"1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile, "5": nome_circolo, "6": token} if nome else None
+    variabili = {"1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile, "5": fascia_oraria, "6": nome_circolo, "7": token} if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PV_SOLLECITO_ISCRIZIONE, variabili,
                   etichetta_simulazione=" PALAVILLAGE - SOLLECITO ISCRIZIONE")
 
@@ -137,7 +134,7 @@ def invia_gruppo_assegnato_torneo(numero_whatsapp: str, nome: str, nome_torneo: 
     ) + FIRMA_MESSAGGIO
     variabili = {
         "1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile,
-        "5": nome_circolo, "6": compagni,
+        "5": fascia_oraria, "6": nome_circolo, "7": compagni,
     } if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PV_GRUPPO_ASSEGNATO, variabili,
                   etichetta_simulazione=" PALAVILLAGE - GRUPPO ASSEGNATO")
@@ -172,16 +169,18 @@ def invia_avviso_gruppo_incompleto(numero_whatsapp: str, nome: str, nome_torneo:
 
 def invia_proposta_promozione_riserva(numero_whatsapp: str, nome: str, nome_torneo: str, giorno_leggibile: str,
                                         data_leggibile: str, token: str, minuti_scadenza: int,
-                                        nome_circolo: str = NOME_CIRCOLO) -> bool:
+                                        nome_circolo: str = NOME_CIRCOLO,
+                                        orario_inizio: str | None = None, orario_fine: str | None = None) -> bool:
     """Mandato alla prima riserva disponibile quando si libera un posto dopo la formazione gruppi."""
     url_risposta = f"{URL_BASE_BACKEND_PUBBLICO}/palavillage/rispondi/{token}"
+    fascia_oraria = _fascia_oraria_leggibile(orario_inizio, orario_fine)
     testo = (
-        f"Ciao {nome}! Si è liberato un posto per il torneo {nome_torneo} di {giorno_leggibile} {data_leggibile} a {nome_circolo}: "
-        f"sei dentro! Conferma entro {minuti_scadenza} minuti qui: {url_risposta}"
+        f"Ciao {nome}! Si è liberato un posto per il torneo {nome_torneo} di {giorno_leggibile} {data_leggibile}"
+        f"{fascia_oraria} a {nome_circolo}: sei dentro! Conferma entro {minuti_scadenza} minuti qui: {url_risposta}"
     ) + FIRMA_MESSAGGIO
     variabili = {
         "1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile,
-        "5": nome_circolo, "6": str(minuti_scadenza), "7": token,
+        "5": fascia_oraria, "6": nome_circolo, "7": str(minuti_scadenza), "8": token,
     } if nome else None
     return _invia(numero_whatsapp, testo, TEMPLATE_PV_PROMOZIONE_RISERVA, variabili,
                   etichetta_simulazione=" PALAVILLAGE - PROPOSTA PROMOZIONE")
