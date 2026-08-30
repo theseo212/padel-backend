@@ -1162,10 +1162,21 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
     giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"][torneo.giorno_settimana]
     data_leggibile = torneo.data.strftime("%d/%m/%Y")
 
+    from app.palavillage.models import Campionato
+    from app.palavillage.pdf_torneo import _nome_campionato_leggibile
+    from app.palavillage.config import NOME_CIRCOLO
+
+    campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+    nome_torneo = _nome_campionato_leggibile(campionato) if campionato else "Torneo"
+    if campionato and campionato.orario_inizio:
+        fascia_oraria = f" — {campionato.orario_inizio}" + (f"-{campionato.orario_fine}" if campionato.orario_fine else "")
+    else:
+        fascia_oraria = ""
+
     # Caso 3: proposta di promozione riserva attiva e non ancora scaduta
     if iscrizione.promozione_scadenza is not None and adesso_italia <= iscrizione.promozione_scadenza:
         corpo = f"""
-            <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
+            <p class="dettaglio"><strong>Torneo:</strong> {nome_torneo} — {giorno_leggibile} {data_leggibile}{fascia_oraria}</p>
             <p>Si è liberato un posto: sei dentro! Confermi la tua partecipazione?</p>
             <form method="POST" action="/palavillage/rispondi/{token}">
                 <button type="submit" name="azione" value="conferma_promozione" class="btn-conferma">Sì, ci sarò</button>
@@ -1177,8 +1188,8 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
     # Caso 1: prima risposta, ancora in attesa
     if iscrizione.stato_risposta == "IN_ATTESA":
         corpo = f"""
-            <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
-            <p class="dettaglio"><strong>Circolo:</strong> Palavillage</p>
+            <p class="dettaglio"><strong>Torneo:</strong> {nome_torneo} — {giorno_leggibile} {data_leggibile}{fascia_oraria}</p>
+            <p class="dettaglio"><strong>Circolo:</strong> {NOME_CIRCOLO}</p>
             <form method="POST" action="/palavillage/rispondi/{token}">
                 <button type="submit" name="azione" value="conferma" class="btn-conferma">Confermo, ci sarò</button>
                 <button type="submit" name="azione" value="rifiuto" class="btn-fallita">Non posso venire</button>
@@ -1189,7 +1200,7 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
     # Caso 2: già confermato, gruppi formati, imprevisto dell'ultimo momento
     if iscrizione.stato_risposta == "CONFERMATO" and iscrizione.ruolo == "TITOLARE" and torneo.stato in ("GRUPPI_FORMATI", "PDF_INVIATI"):
         corpo = f"""
-            <p class="dettaglio"><strong>Torneo:</strong> {giorno_leggibile} {data_leggibile}</p>
+            <p class="dettaglio"><strong>Torneo:</strong> {nome_torneo} — {giorno_leggibile} {data_leggibile}{fascia_oraria}</p>
             <p class="esito ok">✅ Sei confermato/a per questo torneo.</p>
             <p>Imprevisto dell'ultimo minuto? Puoi ancora annullare - cercherò subito un sostituto.</p>
             <form method="POST" action="/palavillage/rispondi/{token}">
