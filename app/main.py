@@ -136,6 +136,32 @@ def verifica_credenziali_admin_palavillage(credenziali: HTTPBasicCredentials = D
     return credenziali.username
 
 
+def verifica_credenziali_admin_palavillage_qualsiasi(credenziali: HTTPBasicCredentials = Depends(_sicurezza_admin)) -> str:
+    """
+    Accetta SIA le credenziali complete (ADMIN_PV_USERNAME/PASSWORD) SIA
+    quelle ridotte del circolo (ADMIN_PV_CIRCOLO_USERNAME/PASSWORD).
+    Usata sulle pagine/azioni che il circolo deve poter usare da solo
+    (tornei, campionati) - a differenza di verifica_credenziali_admin_palavillage
+    "piena", riservata a database, strumenti di forzatura e report di
+    fatturazione, che il circolo non deve vedere.
+
+    Ritorna "completo" o "circolo" a seconda di quale credenziale ha
+    fatto match, così il frontend sa quali pulsanti/pagine mostrare.
+    """
+    from app.palavillage.config import ADMIN_PV_USERNAME, ADMIN_PV_PASSWORD, ADMIN_PV_CIRCOLO_USERNAME, ADMIN_PV_CIRCOLO_PASSWORD
+
+    if secrets.compare_digest(credenziali.username, ADMIN_PV_USERNAME) and secrets.compare_digest(credenziali.password, ADMIN_PV_PASSWORD):
+        return "completo"
+
+    # Le credenziali circolo, se mai lasciate vuote su Railway, non devono MAI dare accesso
+    # (altrimenti uno username/password entrambi vuoti "matcherebbero" per errore).
+    if ADMIN_PV_CIRCOLO_USERNAME and ADMIN_PV_CIRCOLO_PASSWORD:
+        if secrets.compare_digest(credenziali.username, ADMIN_PV_CIRCOLO_USERNAME) and secrets.compare_digest(credenziali.password, ADMIN_PV_CIRCOLO_PASSWORD):
+            return "circolo"
+
+    raise HTTPException(status_code=401, detail="Credenziali non valide", headers={"WWW-Authenticate": "Basic"})
+
+
 def job_matching_periodico():
     """Funzione eseguita automaticamente ogni INTERVALLO_BATCH_MINUTI."""
     db = SessionLocal()
@@ -599,12 +625,18 @@ def crea_tabelle_palavillage():
         connessione.execute(text(
             "ALTER TABLE gruppi_membri_pv ADD COLUMN IF NOT EXISTS punteggio_sollecito_inviato BOOLEAN DEFAULT FALSE"
         ))
+        connessione.execute(text(
+            "ALTER TABLE campionati ADD COLUMN IF NOT EXISTS orario_inizio VARCHAR(5)"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE campionati ADD COLUMN IF NOT EXISTS orario_fine VARCHAR(5)"
+        ))
         connessione.commit()
 
     return {"ok": True, "messaggio": "Tabelle Palavillage create/aggiornate (o già a posto)."}
 
 
-@app.get("/admin/palavillage/campionati", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.get("/admin/palavillage/campionati", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
     """
     Elenco dei campionati Palavillage, con il loro nome attuale (o quello
@@ -622,28 +654,51 @@ def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
             "numero_edizione": c.numero_edizione,
             "nome": c.nome,
             "nome_visualizzato": _nome_campionato_leggibile(c),
+            "orario_inizio": c.orario_inizio,
+            "orario_fine": c.orario_fine,
             "stato": c.stato,
         }
         for c in campionati
     ]
 
 
-@app.post("/admin/palavillage/campionati/{campionato_id}/nome", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.post("/admin/palavillage/campionati/{campionato_id}/nome", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Session = Depends(get_db_pv)):
-    """Assegna (o cambia) il nome identificativo di un campionato, es. 'Campionato Estivo 2026'."""
+    """
+    Assegna (o cambia) il nome identificativo di un campionato, es.
+    'Campionato Estivo 2026', e facoltativamente l'orario del torneo
+    (es. "12:00" - "13:30"). L'orario, se impostato, viene usato sia nei
+    messaggi WhatsApp di convocazione sia nel report mensile, al posto
+    dell'orario unico di riserva (ORA_INIZIO_TORNEO in config.py).
+    """
+    import re
     from app.palavillage.models import Campionato
 
+    def _valida_orario(valore):
+        valore = (valore or "").strip() or None
+        if valore is not None and not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", valore):
+            raise HTTPException(status_code=400, detail=f"Orario '{valore}' non valido, usa il formato HH:MM (es. 12:00)")
+        return valore
+
     nuovo_nome = (dati.get("nome") or "").strip() or None
+    nuovo_orario_inizio = _valida_orario(dati.get("orario_inizio"))
+    nuovo_orario_fine = _valida_orario(dati.get("orario_fine"))
+
     campionato = db_pv.query(Campionato).filter(Campionato.id == campionato_id).first()
     if campionato is None:
         raise HTTPException(status_code=404, detail="Campionato non trovato")
 
     campionato.nome = nuovo_nome
+    campionato.orario_inizio = nuovo_orario_inizio
+    campionato.orario_fine = nuovo_orario_fine
     db_pv.commit()
-    return {"ok": True, "id": campionato.id, "nome": campionato.nome}
+    return {
+        "ok": True, "id": campionato.id, "nome": campionato.nome,
+        "orario_inizio": campionato.orario_inizio, "orario_fine": campionato.orario_fine,
+    }
 
 
-@app.get("/admin/palavillage/campionati/{campionato_id}/classifica", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.get("/admin/palavillage/campionati/{campionato_id}/classifica", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def classifica_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
     """Classifica attuale di un campionato, dal punteggio più alto al più basso."""
     from app.palavillage.models import Campionato, ClassificaVoce, UtentePV
@@ -674,7 +729,7 @@ def classifica_campionato_palavillage(campionato_id: int, db_pv: Session = Depen
     return {"campionato_id": campionato_id, "stato": campionato.stato, "classifica": risultato}
 
 
-@app.post("/admin/palavillage/campionati/{campionato_id}/chiudi", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.post("/admin/palavillage/campionati/{campionato_id}/chiudi", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def chiudi_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(get_db_pv)):
     """
     Chiude un'edizione del campionato: congela la classifica (per
@@ -711,7 +766,7 @@ def chiudi_campionato_palavillage(campionato_id: int, db_pv: Session = Depends(g
     }
 
 
-@app.get("/admin/palavillage/tornei", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.get("/admin/palavillage/tornei", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def elenca_tornei_palavillage(db_pv: Session = Depends(get_db_pv)):
     """
     Elenco dei tornei (passati recenti + tutti i futuri già generati),
@@ -775,7 +830,7 @@ def elenca_tornei_palavillage(db_pv: Session = Depends(get_db_pv)):
     return risultato
 
 
-@app.post("/admin/palavillage/tornei/{torneo_id}/attiva", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.post("/admin/palavillage/tornei/{torneo_id}/attiva", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def attiva_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
     from app.palavillage.motore_torneo import attiva_torneo
     risultato = attiva_torneo(db_pv, torneo_id)
@@ -784,7 +839,7 @@ def attiva_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv
     return risultato
 
 
-@app.post("/admin/palavillage/tornei/{torneo_id}/cancella", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.post("/admin/palavillage/tornei/{torneo_id}/cancella", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def cancella_torneo_palavillage(torneo_id: int, db_pv: Session = Depends(get_db_pv)):
     from app.palavillage.motore_torneo import cancella_torneo
     risultato = cancella_torneo(db_pv, torneo_id)
@@ -864,7 +919,17 @@ def scarica_classifica_palavillage_pdf(campionato_id: int, db_pv: Session = Depe
     )
 
 
-@app.get("/admin/palavillage", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+@app.get("/admin/palavillage/chi-sono", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
+def chi_sono_admin_palavillage(livello: str = Depends(verifica_credenziali_admin_palavillage_qualsiasi)):
+    """
+    Dice al pannello (JavaScript) con quali credenziali si è entrati -
+    "completo" o "circolo" - così la pagina può mostrare o nascondere i
+    pulsanti Database/Strumenti/Report, riservati solo a "completo".
+    """
+    return {"livello": livello}
+
+
+@app.get("/admin/palavillage", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def pagina_admin_palavillage():
     """Serve la pagina web del pannello admin Palavillage."""
     import os
@@ -2763,6 +2828,28 @@ def debug_config_palavillage():
             "dominio di riserva, c'è un bug più sottile da investigare insieme."
         ),
     }
+
+
+@app.get("/admin/palavillage/report/partite", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
+def report_partite_palavillage(anno: int, mese: int, db_pv: Session = Depends(get_db_pv)):
+    """
+    Report mensile per la fatturazione al circolo: un PDF con ogni
+    partita (gruppo da 4) formata nel mese indicato, più il totale in
+    fondo. Riservato al livello "completo" - il circolo non lo vede.
+    """
+    from app.palavillage.pdf_report_fatturazione import genera_pdf_report_fatturazione
+
+    if not (1 <= mese <= 12):
+        raise HTTPException(status_code=400, detail="Mese non valido (deve essere tra 1 e 12)")
+
+    pdf_bytes = genera_pdf_report_fatturazione(db_pv, anno, mese)
+    if pdf_bytes is None:
+        raise HTTPException(status_code=404, detail=f"Nessuna partita trovata per {mese}/{anno}")
+
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="report_partite_{anno}_{mese:02d}.pdf"'},
+    )
 
 
 @app.get("/admin/palavillage/forza", dependencies=[Depends(verifica_credenziali_admin_palavillage)])
