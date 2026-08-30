@@ -83,9 +83,20 @@
     .badge-terminato { background: #d5f2df; color: #1a7a3a; }
     .badge-attesa { background: #ffe4d6; color: #c2410c; }
     .badge-vacanza { background: #fbdcdc; color: #a3231f; margin-left: 6px; }
-    .riga-campionato-nome { display: flex; gap: 6px; align-items: center; }
-    .riga-campionato-nome input {
+    .riga-campionato-nome { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .riga-campionato-nome input[type="text"]:not(.input-orario) {
         padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; flex: 1 1 180px;
+    }
+    .input-orario {
+        padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; width: 72px;
+    }
+    .riquadro-report {
+        background: white; border-radius: 8px; padding: 16px; margin-top: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+    }
+    .riquadro-report label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    .riquadro-report select, .riquadro-report input {
+        padding: 7px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;
     }
     #classifica-espansa {
         margin-top: 10px; background: white; border-radius: 8px; padding: 14px;
@@ -102,8 +113,8 @@
 
 <nav class="menu-admin">
     <a href="/admin/palavillage" class="attivo">Palavillage</a>
-    <a href="/admin/palavillage/database">Database</a>
-    <a href="/admin/palavillage/forza">Strumenti</a>
+    <a href="/admin/palavillage/database" id="link-database">Database</a>
+    <a href="/admin/palavillage/forza" id="link-strumenti">Strumenti</a>
 </nav>
 
 <h2>Tornei</h2>
@@ -112,9 +123,31 @@
 <div id="tabella-tornei"><p class="vuoto">Caricamento…</p></div>
 
 <h2>Campionati</h2>
-<p class="sottotitolo">Un'edizione per giorno della settimana. Chiudendo un'edizione, la prossima generazione tornei ne apre automaticamente una nuova.</p>
+<p class="sottotitolo">Un'edizione per giorno della settimana. Chiudendo un'edizione, la prossima generazione tornei ne apre automaticamente una nuova. L'orario, se impostato, arriva anche nei messaggi WhatsApp e nel report mensile.</p>
 <div id="msg-campionati" class="messaggio"></div>
 <div id="tabella-campionati"><p class="vuoto">Caricamento…</p></div>
+
+<div id="sezione-report" style="display:none;">
+    <h2>Report mensile (fatturazione)</h2>
+    <p class="sottotitolo">Un PDF con ogni partita (gruppo da 4) formata nel mese scelto, con il totale in fondo.</p>
+    <div id="msg-report" class="messaggio"></div>
+    <div class="riquadro-report">
+        <div>
+            <label for="report-mese">Mese</label>
+            <select id="report-mese">
+                <option value="1">Gennaio</option><option value="2">Febbraio</option><option value="3">Marzo</option>
+                <option value="4">Aprile</option><option value="5">Maggio</option><option value="6">Giugno</option>
+                <option value="7">Luglio</option><option value="8">Agosto</option><option value="9">Settembre</option>
+                <option value="10">Ottobre</option><option value="11">Novembre</option><option value="12">Dicembre</option>
+            </select>
+        </div>
+        <div>
+            <label for="report-anno">Anno</label>
+            <input type="number" id="report-anno" value="2026" style="width:80px;">
+        </div>
+        <button class="btn-blu" onclick="generaReport()">Genera report PDF</button>
+    </div>
+</div>
 
 <div id="classifica-espansa">
     <strong id="classifica-titolo"></strong>
@@ -240,6 +273,8 @@ function renderizzaTabellaCampionati(campionati) {
                 <td>
                     <div class="riga-campionato-nome">
                         <input type="text" id="nome-campionato-${c.id}" value="${c.nome || ''}" placeholder="${c.nome_visualizzato}">
+                        <input type="text" class="input-orario" id="orario-inizio-${c.id}" value="${c.orario_inizio || ''}" placeholder="12:00" title="Orario inizio (HH:MM)">
+                        <input type="text" class="input-orario" id="orario-fine-${c.id}" value="${c.orario_fine || ''}" placeholder="13:30" title="Orario fine (HH:MM, facoltativo)">
                         <button class="btn-blu" onclick="salvaNomeCampionato(${c.id})">Salva</button>
                     </div>
                 </td>
@@ -260,14 +295,17 @@ function renderizzaTabellaCampionati(campionati) {
 
 async function salvaNomeCampionato(id) {
     const nuovoNome = document.getElementById(`nome-campionato-${id}`).value.trim();
+    const orarioInizio = document.getElementById(`orario-inizio-${id}`).value.trim();
+    const orarioFine = document.getElementById(`orario-fine-${id}`).value.trim();
     try {
         const risposta = await fetch(`/admin/palavillage/campionati/${id}/nome`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome: nuovoNome }),
+            body: JSON.stringify({ nome: nuovoNome, orario_inizio: orarioInizio, orario_fine: orarioFine }),
         });
-        if (!risposta.ok) throw new Error('Errore nel salvataggio');
-        mostraMessaggio('msg-campionati', 'Nome aggiornato.', 'ok');
+        const dati = await risposta.json();
+        if (!risposta.ok) throw new Error(dati.detail || 'Errore nel salvataggio');
+        mostraMessaggio('msg-campionati', 'Nome e orario aggiornati.', 'ok');
         caricaCampionati();
     } catch (e) {
         mostraMessaggio('msg-campionati', e.message, 'errore');
@@ -312,6 +350,48 @@ async function chiudiCampionato(id) {
     }
 }
 
+async function verificaLivelloAccesso() {
+    try {
+        const risposta = await fetch('/admin/palavillage/chi-sono');
+        const dati = await risposta.json();
+        if (dati.livello !== 'completo') {
+            // Livello "circolo": niente Database, Strumenti, né report di fatturazione.
+            document.getElementById('link-database').remove();
+            document.getElementById('link-strumenti').remove();
+        } else {
+            document.getElementById('sezione-report').style.display = 'block';
+            document.getElementById('report-anno').value = new Date().getFullYear();
+            document.getElementById('report-mese').value = String(new Date().getMonth() + 1);
+        }
+    } catch (e) {
+        // In caso di dubbio, meglio non mostrare le sezioni riservate.
+    }
+}
+
+async function generaReport() {
+    const mese = document.getElementById('report-mese').value;
+    const anno = document.getElementById('report-anno').value;
+    try {
+        const risposta = await fetch(`/admin/palavillage/report/partite?anno=${anno}&mese=${mese}`);
+        if (!risposta.ok) {
+            const dati = await risposta.json().catch(() => ({}));
+            throw new Error(dati.detail || `Errore server (${risposta.status})`);
+        }
+        const blob = await risposta.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `report_partite_${anno}_${String(mese).padStart(2, '0')}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        mostraMessaggio('msg-report', 'Report generato e scaricato.', 'ok');
+    } catch (e) {
+        mostraMessaggio('msg-report', e.message, 'errore');
+    }
+}
+
+verificaLivelloAccesso();
 caricaTornei();
 caricaCampionati();
 </script>
