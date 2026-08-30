@@ -33,6 +33,15 @@ URL_BASE_BACKEND_PUBBLICO = os.getenv("PADEL_BACKEND_URL", "https://web-producti
 ADMIN_PV_USERNAME = os.getenv("ADMIN_PV_USERNAME", "admin_palavillage")
 ADMIN_PV_PASSWORD = os.getenv("ADMIN_PV_PASSWORD", "cambiami-anche-questo")
 
+# Credenziali del pannello "ridotto" da dare al circolo cliente: vede
+# tornei e campionati come nel pannello completo, ma NON ha accesso al
+# database grezzo, agli strumenti di forzatura (pensati per i nostri
+# test) né al report mensile per la fatturazione. Se lasciate vuote,
+# quel livello di accesso semplicemente non viene mai concesso (nessun
+# valore di riserva pubblico, per sicurezza).
+ADMIN_PV_CIRCOLO_USERNAME = os.getenv("ADMIN_PV_CIRCOLO_USERNAME", "")
+ADMIN_PV_CIRCOLO_PASSWORD = os.getenv("ADMIN_PV_CIRCOLO_PASSWORD", "")
+
 # === TWILIO ===
 # Stesso account, stesso numero mittente del sistema generico: le
 # credenziali Twilio restano quelle di app/config.py (TWILIO_ACCOUNT_SID,

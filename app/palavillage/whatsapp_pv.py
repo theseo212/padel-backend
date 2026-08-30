@@ -49,8 +49,21 @@ def invia_riepilogo_iscrizione_pv(numero_whatsapp: str, nome: str, giorni_leggib
                   etichetta_simulazione=" PALAVILLAGE")
 
 
+def _fascia_oraria_leggibile(orario_inizio: str | None, orario_fine: str | None) -> str:
+    """
+    Ritorna " alle 12:00-13:30", " alle 12:00" o stringa vuota, da
+    inserire subito dopo giorno+data nel testo di un messaggio.
+    """
+    if not orario_inizio:
+        return ""
+    if orario_fine:
+        return f" alle {orario_inizio}-{orario_fine}"
+    return f" alle {orario_inizio}"
+
+
 def invia_richiesta_iscrizione_torneo(numero_whatsapp: str, nome: str, nome_torneo: str, giorno_leggibile: str,
-                                        data_leggibile: str, token: str, nome_circolo: str = NOME_CIRCOLO) -> bool:
+                                        data_leggibile: str, token: str, nome_circolo: str = NOME_CIRCOLO,
+                                        orario_inizio: str | None = None, orario_fine: str | None = None) -> bool:
     """
     Mandato T-6gg prima del torneo. Include il riferimento specifico
     (giorno + data) per qualificarsi come Utility davanti a Meta (vedi
@@ -58,11 +71,21 @@ def invia_richiesta_iscrizione_torneo(numero_whatsapp: str, nome: str, nome_torn
     (id.codice_casuale) invece di un bottone Quick Reply, perché il
     payload di un Quick Reply è fisso e non può contenere l'id dinamico
     di ogni singola iscrizione (vedi commento su IscrizioneTorneo.codice_risposta).
+
+    orario_inizio/orario_fine: se il campionato ha un orario impostato
+    dall'admin, arriva qui e finisce nel testo ("alle 12:00-13:30").
+    ATTENZIONE: nei template Twilio GIÀ approvati questa non è ancora
+    una variabile prevista - arriva SOLO nel testo di riserva (quello
+    usato in simulazione, o se il template non è configurato). Per
+    farla comparire anche nel vero messaggio approvato da Meta, va
+    aggiunta una nuova variabile al template e risottomesso (stessa
+    procedura già vista altre volte in questo progetto).
     """
     url_risposta = f"{URL_BASE_BACKEND_PUBBLICO}/palavillage/rispondi/{token}"
+    fascia_oraria = _fascia_oraria_leggibile(orario_inizio, orario_fine)
     testo = (
-        f"Ciao {nome}! Il torneo {nome_torneo} di {giorno_leggibile} {data_leggibile} a {nome_circolo} si avvicina: "
-        f"confermi la tua partecipazione? Rispondi qui: {url_risposta}"
+        f"Ciao {nome}! Il torneo {nome_torneo} di {giorno_leggibile} {data_leggibile}{fascia_oraria} a {nome_circolo} "
+        f"si avvicina: confermi la tua partecipazione? Rispondi qui: {url_risposta}"
     ) + FIRMA_MESSAGGIO
     # Il template Twilio (Call to Action) ha già l'indirizzo di base
     # scritto al suo interno: la sola variabile dinamica nel bottone è
@@ -73,12 +96,14 @@ def invia_richiesta_iscrizione_torneo(numero_whatsapp: str, nome: str, nome_torn
 
 
 def invia_sollecito_iscrizione_torneo(numero_whatsapp: str, nome: str, nome_torneo: str, giorno_leggibile: str,
-                                        data_leggibile: str, token: str, nome_circolo: str = NOME_CIRCOLO) -> bool:
+                                        data_leggibile: str, token: str, nome_circolo: str = NOME_CIRCOLO,
+                                        orario_inizio: str | None = None, orario_fine: str | None = None) -> bool:
     """Mandato T-3gg solo a chi non ha ancora risposto alla richiesta iniziale."""
     url_risposta = f"{URL_BASE_BACKEND_PUBBLICO}/palavillage/rispondi/{token}"
+    fascia_oraria = _fascia_oraria_leggibile(orario_inizio, orario_fine)
     testo = (
         f"Ciao {nome}, non ho ancora ricevuto una tua risposta per il torneo {nome_torneo} di "
-        f"{giorno_leggibile} {data_leggibile} a {nome_circolo}: confermi la tua partecipazione? "
+        f"{giorno_leggibile} {data_leggibile}{fascia_oraria} a {nome_circolo}: confermi la tua partecipazione? "
         f"Rispondi qui: {url_risposta}"
     ) + FIRMA_MESSAGGIO
     variabili = {"1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile, "5": nome_circolo, "6": token} if nome else None
@@ -97,16 +122,18 @@ def invia_conferma_ricevuta_torneo(numero_whatsapp: str, confermato: bool, giorn
 
 def invia_gruppo_assegnato_torneo(numero_whatsapp: str, nome: str, nome_torneo: str, giorno_leggibile: str,
                                     data_leggibile: str, compagni: str,
-                                    nome_circolo: str = NOME_CIRCOLO) -> bool:
+                                    nome_circolo: str = NOME_CIRCOLO,
+                                    orario_inizio: str | None = None, orario_fine: str | None = None) -> bool:
     """
     Mandato a ogni titolare dopo la formazione gruppi (T-12h). 'compagni'
     è già una stringa pronta con i 3 nomi (separati da virgola, non da
     ritorni a capo dentro la variabile - vietato da WhatsApp anche con
     JSON tecnicamente valido, vedi lezioni imparate nell'handoff).
     """
+    fascia_oraria = _fascia_oraria_leggibile(orario_inizio, orario_fine)
     testo = (
-        f"Ciao {nome}! Ecco il tuo gruppo per il torneo {nome_torneo} di {giorno_leggibile} {data_leggibile} a {nome_circolo}. "
-        f"Giocherai con: {compagni}. Ci vediamo lì!"
+        f"Ciao {nome}! Ecco il tuo gruppo per il torneo {nome_torneo} di {giorno_leggibile} {data_leggibile}"
+        f"{fascia_oraria} a {nome_circolo}. Giocherai con: {compagni}. Ci vediamo lì!"
     ) + FIRMA_MESSAGGIO
     variabili = {
         "1": nome, "2": nome_torneo, "3": giorno_leggibile, "4": data_leggibile,

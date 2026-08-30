@@ -41,9 +41,15 @@ def _adesso_italia() -> datetime:
     return datetime.now(ZoneInfo("Europe/Rome"))
 
 
-def _inizio_torneo_italia(data_torneo: date) -> datetime:
-    """Data/ora esatta (timezone-aware) di inizio di un torneo in un giorno specifico."""
-    ora_h, ora_m = (int(x) for x in ORA_INIZIO_TORNEO.split(":"))
+def _inizio_torneo_italia(data_torneo: date, orario_hhmm: str | None = None) -> datetime:
+    """
+    Data/ora esatta (timezone-aware) di inizio di un torneo in un giorno
+    specifico. Se il campionato ha un proprio orario_inizio impostato
+    dall'admin, passalo qui per usarlo al posto dell'unico orario di
+    riserva (ORA_INIZIO_TORNEO) - così i tempi di invio (T-6gg, T-12h,
+    ecc.) sono calcolati sull'orario vero di quel torneo specifico.
+    """
+    ora_h, ora_m = (int(x) for x in (orario_hhmm or ORA_INIZIO_TORNEO).split(":"))
     return datetime.combine(data_torneo, time(ora_h, ora_m), tzinfo=ZoneInfo("Europe/Rome"))
 
 
@@ -139,9 +145,10 @@ def job_invia_richieste_iscrizione(db_pv: Session, torneo_id_specifico: int | No
 
     for torneo in tornei_da_elaborare:
         era_ancora_da_iniziare = torneo.stato == "PROGRAMMATO"
+        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
 
         if era_ancora_da_iniziare and not ignora_soglia_tempo:
-            soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_RICHIESTA_ISCRIZIONE_PRIMA)
+            soglia = _inizio_torneo_italia(torneo.data, campionato.orario_inizio if campionato else None) - timedelta(hours=ORE_RICHIESTA_ISCRIZIONE_PRIMA)
             if adesso < soglia:
                 continue
 
@@ -157,7 +164,6 @@ def job_invia_richieste_iscrizione(db_pv: Session, torneo_id_specifico: int | No
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
-        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         nome_campionato = _nome_campionato_leggibile(campionato)
 
         nuovi_contattati = 0
@@ -179,7 +185,9 @@ def job_invia_richieste_iscrizione(db_pv: Session, torneo_id_specifico: int | No
 
             token = f"{iscrizione.id}.{iscrizione.codice_risposta}"
             invia_richiesta_iscrizione_torneo(
-                utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token
+                utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token,
+                orario_inizio=campionato.orario_inizio if campionato else None,
+                orario_fine=campionato.orario_fine if campionato else None,
             )
             nuovi_contattati += 1
 
@@ -210,14 +218,14 @@ def job_invia_solleciti_iscrizione(db_pv: Session, torneo_id_specifico: int | No
     tornei_da_elaborare = query.all()
 
     for torneo in tornei_da_elaborare:
+        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         if not ignora_soglia_tempo:
-            soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_SOLLECITO_ISCRIZIONE_PRIMA)
+            soglia = _inizio_torneo_italia(torneo.data, campionato.orario_inizio if campionato else None) - timedelta(hours=ORE_SOLLECITO_ISCRIZIONE_PRIMA)
             if adesso < soglia:
                 continue
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
-        campionato = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         nome_campionato = _nome_campionato_leggibile(campionato)
 
         non_risposto = (
@@ -231,7 +239,9 @@ def job_invia_solleciti_iscrizione(db_pv: Session, torneo_id_specifico: int | No
                 continue
             token = f"{iscrizione.id}.{iscrizione.codice_risposta}"
             invia_sollecito_iscrizione_torneo(
-                utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token
+                utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile, token,
+                orario_inizio=campionato.orario_inizio if campionato else None,
+                orario_fine=campionato.orario_fine if campionato else None,
             )
 
         torneo.stato = "SOLLECITO_INVIATO"
@@ -332,14 +342,14 @@ def job_forma_gruppi_torneo(db_pv: Session, torneo_id_specifico: int | None = No
     tornei_da_elaborare = query.all()
 
     for torneo in tornei_da_elaborare:
+        campionato_corrente = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         if not ignora_soglia_tempo:
-            soglia = _inizio_torneo_italia(torneo.data) - timedelta(hours=ORE_FORMAZIONE_GRUPPI_PRIMA)
+            soglia = _inizio_torneo_italia(torneo.data, campionato_corrente.orario_inizio if campionato_corrente else None) - timedelta(hours=ORE_FORMAZIONE_GRUPPI_PRIMA)
             if adesso < soglia:
                 continue
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
-        campionato_corrente = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         nome_campionato = _nome_campionato_leggibile(campionato_corrente)
 
         confermati = (
@@ -397,6 +407,8 @@ def job_forma_gruppi_torneo(db_pv: Session, torneo_id_specifico: int | None = No
                     invia_gruppo_assegnato_torneo(
                         utente.whatsapp_numero, utente.nome, nome_campionato, giorno_leggibile, data_leggibile,
                         compagni_nomi,
+                        orario_inizio=campionato_corrente.orario_inizio if campionato_corrente else None,
+                        orario_fine=campionato_corrente.orario_fine if campionato_corrente else None,
                     )
 
         for iscrizione in riserve_iscrizioni:
@@ -614,15 +626,15 @@ def job_richiedi_punteggio_torneo(db_pv: Session, torneo_id_specifico: int | Non
     tornei_da_elaborare = query.all()
 
     for torneo in tornei_da_elaborare:
+        campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         if not ignora_soglia_tempo:
-            soglia = _inizio_torneo_italia(torneo.data) + timedelta(hours=ORE_DURATA_TORNEO)
+            soglia = _inizio_torneo_italia(torneo.data, campionato_torneo.orario_inizio if campionato_torneo else None) + timedelta(hours=ORE_DURATA_TORNEO)
             soglia_naive = soglia.replace(tzinfo=None)
             if adesso < soglia_naive:
                 continue
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
-        campionato_torneo = db_pv.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
         nome_campionato = _nome_campionato_leggibile(campionato_torneo)
 
         gruppi = db_pv.query(GruppoPV).filter(GruppoPV.torneo_id == torneo.id).all()

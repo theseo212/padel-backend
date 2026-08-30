@@ -79,6 +79,15 @@ class Campionato(BasePV):
     # visualizzarlo (PDF, messaggi, pannello).
     nome = Column(String(100), nullable=True)
 
+    # Orario facoltativo del torneo per questo campionato (es. "12:00" e
+    # "13:30"). Se non impostato, si usa ORA_INIZIO_TORNEO da config.py
+    # come riserva. Impostandolo, arriva sia nei messaggi WhatsApp di
+    # convocazione sia nel report mensile per la fatturazione - e viene
+    # usato anche per calcolare con più precisione quando mandare le
+    # richieste (prima c'era un solo orario fisso per tutti i giorni).
+    orario_inizio = Column(String(5), nullable=True)  # formato "HH:MM"
+    orario_fine = Column(String(5), nullable=True)  # formato "HH:MM", solo per mostrarlo nei messaggi
+
     stato = Column(String(15), default="APERTO")  # APERTO, CHIUSO
 
     data_apertura = Column(DateTime, server_default=func.now())
