@@ -631,6 +631,53 @@ def crea_tabelle_palavillage():
         connessione.execute(text(
             "ALTER TABLE campionati ADD COLUMN IF NOT EXISTS orario_fine VARCHAR(5)"
         ))
+        connessione.execute(text(
+            "ALTER TABLE campionati ADD COLUMN IF NOT EXISTS slot INTEGER"
+        ))
+        # Stessa storia del vincolo su Torneo qui sopra: prima un solo
+        # campionato per giorno era garantito da (giorno_settimana,
+        # numero_edizione) unico; ora l'identità è lo SLOT.
+        connessione.execute(text(
+            "ALTER TABLE campionati DROP CONSTRAINT IF EXISTS uq_campionato_giorno_edizione"
+        ))
+        connessione.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'uq_campionato_slot_edizione'
+                ) THEN
+                    ALTER TABLE campionati ADD CONSTRAINT uq_campionato_slot_edizione UNIQUE (slot, numero_edizione);
+                END IF;
+            END $$;
+        """))
+        # Il vecchio vincolo univoco sulla sola data non regge più ora che
+        # più campionati possono cadere lo stesso giorno - lo sostituiamo
+        # con uno sulla coppia (data, campionato_id). Il nome del vincolo
+        # generato automaticamente da Postgres per una colonna "unique=True"
+        # è <tabella>_<colonna>_key.
+        connessione.execute(text(
+            "ALTER TABLE tornei DROP CONSTRAINT IF EXISTS tornei_data_key"
+        ))
+        connessione.execute(text("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'uq_torneo_data_campionato'
+                ) THEN
+                    ALTER TABLE tornei ADD CONSTRAINT uq_torneo_data_campionato UNIQUE (data, campionato_id);
+                END IF;
+            END $$;
+        """))
+        # Rinomina giorni_bitmask -> campionati_bitmask solo se non è già
+        # stata fatta (idempotente, per poter rilanciare in sicurezza).
+        connessione.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='utenti_pv' AND column_name='giorni_bitmask') THEN
+                    ALTER TABLE utenti_pv RENAME COLUMN giorni_bitmask TO campionati_bitmask;
+                END IF;
+            END $$;
+        """))
         connessione.commit()
 
     return {"ok": True, "messaggio": "Tabelle Palavillage create/aggiornate (o già a posto)."}
@@ -640,16 +687,22 @@ def crea_tabelle_palavillage():
 def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
     """
     Elenco dei campionati Palavillage, con il loro nome attuale (o quello
-    di riserva se non ancora assegnato) - utile finché non esiste ancora
-    il pannello admin completo (Fase 4).
+    di riserva se non ancora assegnato). Garantisce prima che tutti gli
+    slot (1..NUMERO_CAMPIONATI) esistano già come campionato APERTO,
+    così aprendo il pannello li vedi subito anche se lo scheduler non è
+    ancora passato a crearli.
     """
     from app.palavillage.models import Campionato
     from app.palavillage.pdf_torneo import _nome_campionato_leggibile
+    from app.palavillage.motore_torneo import assicura_slot_campionati_esistano
 
-    campionati = db_pv.query(Campionato).order_by(Campionato.giorno_settimana, Campionato.numero_edizione).all()
+    assicura_slot_campionati_esistano(db_pv)
+
+    campionati = db_pv.query(Campionato).order_by(Campionato.slot, Campionato.numero_edizione).all()
     return [
         {
             "id": c.id,
+            "slot": c.slot,
             "giorno_settimana": c.giorno_settimana,
             "numero_edizione": c.numero_edizione,
             "nome": c.nome,
@@ -665,11 +718,13 @@ def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
 @app.post("/admin/palavillage/campionati/{campionato_id}/nome", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
 def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Session = Depends(get_db_pv)):
     """
-    Assegna (o cambia) il nome identificativo di un campionato, es.
-    'Campionato Estivo 2026', e facoltativamente l'orario del torneo
-    (es. "12:00" - "13:30"). L'orario, se impostato, viene usato sia nei
-    messaggi WhatsApp di convocazione sia nel report mensile, al posto
-    dell'orario unico di riserva (ORA_INIZIO_TORNEO in config.py).
+    Assegna (o cambia) il nome identificativo di un campionato, il suo
+    giorno della settimana (0=lunedì...6=domenica - ora libero, non più
+    l'identità del campionato: quella è lo slot) e facoltativamente
+    l'orario del torneo (es. "12:00" - "13:30"). L'orario, se impostato,
+    viene usato sia nei messaggi WhatsApp di convocazione sia nel report
+    mensile, al posto dell'orario unico di riserva (ORA_INIZIO_TORNEO in
+    config.py).
     """
     import re
     from app.palavillage.models import Campionato
@@ -684,6 +739,15 @@ def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Sessi
     nuovo_orario_inizio = _valida_orario(dati.get("orario_inizio"))
     nuovo_orario_fine = _valida_orario(dati.get("orario_fine"))
 
+    nuovo_giorno = dati.get("giorno_settimana")
+    if nuovo_giorno is not None:
+        try:
+            nuovo_giorno = int(nuovo_giorno)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Giorno della settimana non valido")
+        if not (0 <= nuovo_giorno <= 6):
+            raise HTTPException(status_code=400, detail="Giorno della settimana deve essere tra 0 (lunedì) e 6 (domenica)")
+
     campionato = db_pv.query(Campionato).filter(Campionato.id == campionato_id).first()
     if campionato is None:
         raise HTTPException(status_code=404, detail="Campionato non trovato")
@@ -691,9 +755,11 @@ def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Sessi
     campionato.nome = nuovo_nome
     campionato.orario_inizio = nuovo_orario_inizio
     campionato.orario_fine = nuovo_orario_fine
+    if nuovo_giorno is not None:
+        campionato.giorno_settimana = nuovo_giorno
     db_pv.commit()
     return {
-        "ok": True, "id": campionato.id, "nome": campionato.nome,
+        "ok": True, "id": campionato.id, "nome": campionato.nome, "giorno_settimana": campionato.giorno_settimana,
         "orario_inizio": campionato.orario_inizio, "orario_fine": campionato.orario_fine,
     }
 
@@ -785,7 +851,7 @@ def elenca_tornei_palavillage(db_pv: Session = Depends(get_db_pv)):
         .all()
     )
 
-    nomi_giorni = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]
+    nomi_giorni = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
     etichette_stato = {
         "PROGRAMMATO": "Programmato",
         "RICHIESTE_INVIATE": "Richieste inviate",
@@ -889,6 +955,40 @@ def forza_richiesta_punteggio_palavillage(torneo_id: int, db_pv: Session = Depen
     from app.palavillage.motore_torneo import job_richiedi_punteggio_torneo
     n = job_richiedi_punteggio_torneo(db_pv, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
     return {"ok": True, "tornei_elaborati": n}
+
+
+@app.get("/palavillage/campionati/pubblico")
+def elenco_campionati_pubblico_palavillage(db_pv: Session = Depends(get_db_pv)):
+    """
+    Endpoint pubblico (nessuna credenziale: sono solo nomi e orari dei
+    campionati, non dati sensibili), usato dalla homepage per mostrare i
+    bottoni di iscrizione con il nome e l'orario VERI impostati
+    dall'admin - non più giorni fissi scritti a mano nel frontend.
+    Garantisce anche che tutti gli slot esistano già, per sicurezza.
+    """
+    from app.palavillage.models import Campionato
+    from app.palavillage.pdf_torneo import _nome_campionato_leggibile
+    from app.palavillage.motore_torneo import assicura_slot_campionati_esistano, _NOMI_GIORNI_LEGGIBILI
+
+    assicura_slot_campionati_esistano(db_pv)
+
+    campionati = (
+        db_pv.query(Campionato)
+        .filter(Campionato.stato == "APERTO")
+        .order_by(Campionato.slot)
+        .all()
+    )
+    return [
+        {
+            "slot": c.slot,
+            "nome_visualizzato": _nome_campionato_leggibile(c),
+            "giorno_settimana": c.giorno_settimana,
+            "giorno_leggibile": _NOMI_GIORNI_LEGGIBILI[c.giorno_settimana].capitalize(),
+            "orario_inizio": c.orario_inizio,
+            "orario_fine": c.orario_fine,
+        }
+        for c in campionati
+    ]
 
 
 @app.get("/palavillage/classifica/{campionato_id}")
@@ -1046,7 +1146,7 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
             "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
         )
 
-    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"][torneo.giorno_settimana]
+    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"][torneo.giorno_settimana]
     data_leggibile = torneo.data.strftime("%d/%m/%Y")
 
     # Caso 3: proposta di promozione riserva attiva e non ancora scaduta
@@ -1111,7 +1211,7 @@ async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request,
             "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
         )
 
-    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"][torneo.giorno_settimana]
+    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"][torneo.giorno_settimana]
     data_leggibile = torneo.data.strftime("%d/%m/%Y")
 
     corpo_form = await request.form()
