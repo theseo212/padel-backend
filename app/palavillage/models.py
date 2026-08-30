@@ -16,7 +16,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.palavillage.database import BasePV
 
-GIORNI_SETTIMANA = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]
+GIORNI_SETTIMANA = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 
 
 class UtentePV(BasePV):
@@ -46,9 +46,15 @@ class UtentePV(BasePV):
 
     lato_preferito = Column(String(15), nullable=False)  # DX, SX, INDIFFERENTE
 
-    # Bitmask a 5 bit: bit 0 = lunedì ... bit 4 = venerdì.
-    # Modificabile in ogni momento dal form (a differenza del livello).
-    giorni_bitmask = Column(Integer, nullable=False, default=0)
+    # Bitmask su NUMERO_CAMPIONATI bit: bit (slot-1) = "iscritto al campionato di quello slot".
+    # Prima era un bitmask sui 5 giorni lavorativi (lunedì-venerdì); ora i
+    # campionati sono slot liberi (l'admin decide giorno e orario di
+    # ognuno, anche più di uno nello stesso giorno) - quindi la scelta è
+    # per CAMPIONATO (slot), non più per giorno della settimana. La
+    # chiave è lo SLOT (stabile tra un'edizione e la successiva dello
+    # stesso campionato), non l'id della riga Campionato (che cambia a
+    # ogni nuova edizione quando la precedente si chiude).
+    campionati_bitmask = Column(Integer, nullable=False, default=0)
 
     stato_account = Column(String(20), default="ATTIVO")  # ATTIVO, SOSPESO
     termini_accettati = Column(Boolean, default=False)
@@ -62,16 +68,32 @@ class UtentePV(BasePV):
 
 class Campionato(BasePV):
     """
-    Un'edizione del campionato per un giorno della settimana. Quando
-    l'admin "chiude" un campionato, si congela la classifica (per
-    premiare i vincitori) e se ne apre uno nuovo, sempre per lo stesso
-    giorno, che riparte da zero.
+    Un'edizione di uno dei NUMERO_CAMPIONATI campionati (slot) di
+    Palavillage. Lo SLOT (1..NUMERO_CAMPIONATI) è l'identità stabile nel
+    tempo - resta lo stesso anche quando un'edizione si chiude e se ne
+    apre una nuova. Giorno della settimana e orario invece sono decisi
+    liberamente dall'admin per ogni slot, e possono anche cambiare da
+    un'edizione all'altra (l'admin potrebbe spostare uno slot su un
+    altro giorno): non sono più "l'identità" del campionato come lo
+    erano prima (quando esisteva un solo campionato per giorno).
+
+    Quando l'admin "chiude" un campionato, si congela la classifica (per
+    premiare i vincitori) e se ne apre uno nuovo per lo stesso slot,
+    che riparte da zero.
     """
     __tablename__ = "campionati"
 
     id = Column(Integer, primary_key=True)
-    giorno_settimana = Column(Integer, nullable=False)  # 0=lun ... 4=ven
-    numero_edizione = Column(Integer, nullable=False)  # 1, 2, 3... per quel giorno
+
+    # Identità stabile: 1..NUMERO_CAMPIONATI (vedi config.py). NON
+    # cambia mai tra un'edizione e la successiva dello stesso campionato.
+    slot = Column(Integer, nullable=False)
+
+    # 0=lunedì ... 6=domenica - liberamente scelto dall'admin per questo
+    # slot (prima era fisso e determinava anche l'identità del
+    # campionato; ora è solo un attributo dell'edizione corrente).
+    giorno_settimana = Column(Integer, nullable=False)
+    numero_edizione = Column(Integer, nullable=False)  # 1, 2, 3... per quello SLOT (non più per giorno)
 
     # Nome facoltativo assegnabile dall'admin (es. "Campionato Estivo
     # 2026"). Se non impostato, si usa un nome di riserva generato
@@ -97,20 +119,34 @@ class Campionato(BasePV):
     tornei = relationship("Torneo", back_populates="campionato")
 
     __table_args__ = (
-        UniqueConstraint("giorno_settimana", "numero_edizione", name="uq_campionato_giorno_edizione"),
+        # Prima era su (giorno_settimana, numero_edizione), quando il
+        # giorno ERA l'identità del campionato. Ora è lo SLOT l'identità
+        # stabile - due slot diversi possono benissimo condividere
+        # giorno e numero_edizione (es. entrambi alla loro edizione #1,
+        # nello stesso giorno).
+        UniqueConstraint("slot", "numero_edizione", name="uq_campionato_slot_edizione"),
     )
 
 
 class Torneo(BasePV):
     """
-    Un singolo torneo in una data specifica (es. lunedì 7/10/2026).
-    Corrisponde a UNA riga nel pannello admin.
+    Un singolo torneo in una data specifica (es. lunedì 7/10/2026), per
+    UNO specifico campionato/slot. Corrisponde a UNA riga nel pannello
+    admin.
     """
     __tablename__ = "tornei"
+    __table_args__ = (
+        # Non basta più "unica per data": ora più campionati (slot)
+        # possono cadere lo stesso giorno (l'admin li configura
+        # liberamente), quindi il vincolo è sulla COPPIA data+campionato -
+        # una sola tappa per campionato in quella data, ma tornei di
+        # campionati diversi possono benissimo condividere la data.
+        UniqueConstraint("data", "campionato_id", name="uq_torneo_data_campionato"),
+    )
 
     id = Column(Integer, primary_key=True)
     campionato_id = Column(Integer, ForeignKey("campionati.id"), nullable=False)
-    data = Column(Date, nullable=False, unique=True)
+    data = Column(Date, nullable=False)
     giorno_settimana = Column(Integer, nullable=False)  # denormalizzato, comodo per query/filtri
 
     # Numero progressivo del torneo all'interno del suo campionato (1ª
@@ -135,7 +171,7 @@ class IscrizioneTorneo(BasePV):
     """
     La risposta di un utente alla richiesta di iscrizione per UN torneo
     specifico (non la preferenza settimanale generale, quella è in
-    UtentePV.giorni_bitmask — questa è la conferma per la singola data).
+    UtentePV.campionati_bitmask — questa è la conferma per la singola data).
     """
     __tablename__ = "iscrizioni_torneo"
 

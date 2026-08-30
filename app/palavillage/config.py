@@ -70,7 +70,14 @@ ORE_FORMAZIONE_GRUPPI_PRIMA = 12           # T-12h
 ORE_SOLLECITO_PUNTEGGIO_DOPO = 2           # T+2h dalla fine torneo
 ORE_DURATA_TORNEO = 2                      # durata presunta di un torneo, per calcolare quando è "finito"
 ORE_CHIUSURA_FORZATA_PUNTEGGIO = 24        # oltre questo tempo, si chiude comunque anche con risposte mancanti
-ORA_INIZIO_TORNEO = "08:00"                # orario locale (Europe/Rome) di inizio torneo
+ORA_INIZIO_TORNEO = "08:00"                # orario locale (Europe/Rome) di inizio torneo, di riserva se lo slot non ha un proprio orario
+
+# Quanti campionati (slot) esistono in totale - non più uno per giorno
+# della settimana: ogni slot ha il proprio giorno e orario, decisi
+# liberamente dall'admin (anche più slot nello stesso giorno). Cambiare
+# questo numero richiede comunque di generare/rimuovere manualmente le
+# righe Campionato corrispondenti dal pannello - non è automatico.
+NUMERO_CAMPIONATI = 6
 GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO = 14 # quante giornate future tenere sempre pronte
 MINUTI_TIMEOUT_PROMOZIONE_RISERVA = 30     # tempo dato a una riserva per confermare dopo una cancellazione tardiva
 

@@ -21,7 +21,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from app.palavillage.models import Torneo, Campionato, GruppoPV, GruppoMembroPV, UtentePV
 from app.palavillage.config import NOME_CIRCOLO
 
-_NOMI_GIORNI_LEGGIBILI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]
+_NOMI_GIORNI_LEGGIBILI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
 
 
 def _nome_campionato_leggibile(campionato: Campionato) -> str:

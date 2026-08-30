@@ -11,29 +11,40 @@ from app import models as models_generico
 from app import config as config_generico
 from app.services.conversione_livello import ottieni_livello_playtomic
 
-from app.palavillage.models import UtentePV
+from app.palavillage.models import UtentePV, Campionato
 from app.palavillage.schemas import IscrizionePVCreate
 from app.palavillage.whatsapp_pv import genera_otp, invia_otp_whatsapp, invia_riepilogo_iscrizione_pv
+from app.palavillage.config import NUMERO_CAMPIONATI
+from app.palavillage.pdf_torneo import _nome_campionato_leggibile
 
-_NOMI_GIORNI = {"LUN": 0, "MAR": 1, "MER": 2, "GIO": 3, "VEN": 4}
-_NOMI_GIORNI_LEGGIBILI = {"LUN": "lunedì", "MAR": "martedì", "MER": "mercoledì", "GIO": "giovedì", "VEN": "venerdì"}
 _LATO_LEGGIBILE = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}
 
 
-def crea_giorni_bitmask(giorni: list[str]) -> int:
+def crea_campionati_bitmask(slot_selezionati: list[int]) -> int:
     bitmask = 0
-    for giorno in giorni:
-        bitmask |= 1 << _NOMI_GIORNI[giorno]
+    for slot in slot_selezionati:
+        bitmask |= 1 << (slot - 1)
     return bitmask
 
 
-def giorni_bitmask_a_lista(bitmask: int) -> list[str]:
-    return [nome for nome, indice in _NOMI_GIORNI.items() if bitmask & (1 << indice)]
+def campionati_bitmask_a_lista(bitmask: int) -> list[int]:
+    return [slot for slot in range(1, NUMERO_CAMPIONATI + 1) if bitmask & (1 << (slot - 1))]
 
 
-def giorni_bitmask_a_leggibile(bitmask: int) -> str:
-    nomi = [_NOMI_GIORNI_LEGGIBILI[g] for g in giorni_bitmask_a_lista(bitmask)]
-    return ", ".join(nomi) if nomi else "nessuna"
+def campionati_bitmask_a_leggibile(db_pv: Session, bitmask: int) -> str:
+    """
+    A differenza della vecchia versione (pura, senza database - bastava
+    tradurre un codice giorno in un nome fisso), ora serve interrogare
+    il database: il nome "leggibile" di ogni slot dipende dal campionato
+    APERTO in quel momento per quello slot (nome scelto dall'admin, o un
+    nome di riserva se non ne ha ancora uno).
+    """
+    slot_selezionati = campionati_bitmask_a_lista(bitmask)
+    nomi = []
+    for slot in slot_selezionati:
+        campionato = db_pv.query(Campionato).filter(Campionato.slot == slot, Campionato.stato == "APERTO").first()
+        nomi.append(_nome_campionato_leggibile(campionato) if campionato else f"Campionato #{slot}")
+    return ", ".join(nomi) if nomi else "nessuno"
 
 
 def _numero_gia_verificato_nel_generico(db_generico: Session, whatsapp_numero: str) -> bool:
@@ -68,7 +79,7 @@ def profilo_pv(db_pv: Session, db_generico: Session, whatsapp_numero: str) -> di
             "livello_dichiarato_scala": utente.livello_dichiarato_scala,
             "livello_dichiarato_originale": utente.livello_dichiarato_originale,
             "lato_preferito": utente.lato_preferito,
-            "giorni": giorni_bitmask_a_lista(utente.giorni_bitmask),
+            "campionati": campionati_bitmask_a_lista(utente.campionati_bitmask),
         }
 
     utente_generico = db_generico.query(models_generico.Utente).filter(
@@ -115,7 +126,7 @@ def gestisci_iscrizione(db_pv: Session, db_generico: Session, dati: IscrizionePV
             livello_dichiarato_scala=dati.livello_scala,
             livello_dichiarato_originale=dati.livello_valore if dati.livello_scala == "WANSPORT" else None,
             lato_preferito=dati.lato_preferito,
-            giorni_bitmask=crea_giorni_bitmask(dati.giorni),
+            campionati_bitmask=crea_campionati_bitmask(dati.campionati),
         )
         db_pv.add(utente)
         db_pv.flush()
@@ -124,7 +135,7 @@ def gestisci_iscrizione(db_pv: Session, db_generico: Session, dati: IscrizionePV
         # regola del sistema generico) - lato e giorni sono invece sempre
         # aggiornabili.
         utente.lato_preferito = dati.lato_preferito
-        utente.giorni_bitmask = crea_giorni_bitmask(dati.giorni)
+        utente.campionati_bitmask = crea_campionati_bitmask(dati.campionati)
 
     if not utente.termini_accettati or not utente.privacy_accettata:
         if not (dati.accetta_termini and dati.accetta_privacy):
@@ -133,7 +144,7 @@ def gestisci_iscrizione(db_pv: Session, db_generico: Session, dati: IscrizionePV
         utente.privacy_accettata = True
         utente.data_accettazione_termini = datetime.utcnow()
 
-    giorni_leggibili = giorni_bitmask_a_leggibile(utente.giorni_bitmask)
+    campionati_leggibili = campionati_bitmask_a_leggibile(db_pv, utente.campionati_bitmask)
 
     if not utente.whatsapp_validato:
         codice = genera_otp()
@@ -155,7 +166,7 @@ def gestisci_iscrizione(db_pv: Session, db_generico: Session, dati: IscrizionePV
     # Numero già fidato (validato nel sistema generico, o già validato qui
     # in una precedente iscrizione a Palavillage): nessun OTP da rifare.
     riepilogo_inviato_davvero = invia_riepilogo_iscrizione_pv(
-        utente.whatsapp_numero, utente.nome, giorni_leggibili,
+        utente.whatsapp_numero, utente.nome, campionati_leggibili,
     )
     db_pv.commit()
 
@@ -186,9 +197,9 @@ def valida_otp_pv(db_pv: Session, whatsapp_numero: str, codice_otp: str) -> dict
     utente.otp_scadenza = None
     db_pv.commit()
 
-    giorni_leggibili = giorni_bitmask_a_leggibile(utente.giorni_bitmask)
+    campionati_leggibili = campionati_bitmask_a_leggibile(db_pv, utente.campionati_bitmask)
     invia_riepilogo_iscrizione_pv(
-        utente.whatsapp_numero, utente.nome, giorni_leggibili,
+        utente.whatsapp_numero, utente.nome, campionati_leggibili,
     )
 
     return {"messaggio": "Numero verificato con successo."}

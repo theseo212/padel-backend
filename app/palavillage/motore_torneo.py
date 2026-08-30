@@ -19,6 +19,7 @@ from app.palavillage.config import (
     ORE_RICHIESTA_ISCRIZIONE_PRIMA, ORE_SOLLECITO_ISCRIZIONE_PRIMA, ORE_FORMAZIONE_GRUPPI_PRIMA,
     ORA_INIZIO_TORNEO, GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO, MINUTI_TIMEOUT_PROMOZIONE_RISERVA,
     ORE_DURATA_TORNEO, ORE_SOLLECITO_PUNTEGGIO_DOPO, ORE_CHIUSURA_FORZATA_PUNTEGGIO, URL_BASE_BACKEND_PUBBLICO,
+    NUMERO_CAMPIONATI,
 )
 from app.palavillage.whatsapp_pv import (
     invia_richiesta_iscrizione_torneo, invia_sollecito_iscrizione_torneo, invia_conferma_ricevuta_torneo,
@@ -33,7 +34,7 @@ from app.palavillage.pdf_classifica import genera_pdf_classifica
 from app.palavillage.email_pv import invia_pdf_torneo_segreteria
 from app.palavillage.routing import imposta_contesto_attivo, rimuovi_contesto_attivo
 
-_NOMI_GIORNI_LEGGIBILI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì"]
+_NOMI_GIORNI_LEGGIBILI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
 
 
 def _adesso_italia() -> datetime:
@@ -53,56 +54,108 @@ def _inizio_torneo_italia(data_torneo: date, orario_hhmm: str | None = None) -> 
     return datetime.combine(data_torneo, time(ora_h, ora_m), tzinfo=ZoneInfo("Europe/Rome"))
 
 
+def assicura_slot_campionati_esistano(db_pv: Session) -> int:
+    """
+    Assicura che esista un'edizione APERTA per ognuno degli slot
+    (1..NUMERO_CAMPIONATI, vedi config) - creandola (con giorno/orario di
+    riserva) se non esiste ancora nessuna riga per quello slot, o
+    ereditando giorno e orario dall'edizione precedente dello stesso
+    slot se ce n'era una chiusa in precedenza. Funzione a parte (non
+    solo dentro genera_tornei_futuri) così il pannello admin può
+    richiamarla subito quando apri la pagina Campionati, senza dover
+    aspettare il giro orario dello scheduler.
+
+    Ritorna il numero di nuovi slot creati.
+    """
+    creati = 0
+    for slot in range(1, NUMERO_CAMPIONATI + 1):
+        campionato_aperto = (
+            db_pv.query(Campionato)
+            .filter(Campionato.slot == slot, Campionato.stato == "APERTO")
+            .first()
+        )
+        if campionato_aperto is not None:
+            continue
+
+        ultima_edizione = (
+            db_pv.query(Campionato)
+            .filter(Campionato.slot == slot)
+            .order_by(Campionato.numero_edizione.desc())
+            .first()
+        )
+        nuovo_numero = (ultima_edizione.numero_edizione + 1) if ultima_edizione else 1
+        if ultima_edizione:
+            # L'edizione nuova eredita giorno e orario da quella precedente
+            # (continuità) - il NOME invece riparte vuoto ad ogni edizione.
+            giorno_nuova_edizione = ultima_edizione.giorno_settimana
+            orario_inizio_nuova = ultima_edizione.orario_inizio
+            orario_fine_nuova = ultima_edizione.orario_fine
+        else:
+            # Primissima creazione dello slot: giorno di riserva distribuito
+            # sulla settimana, nessun orario - l'admin lo imposta dal pannello.
+            giorno_nuova_edizione = (slot - 1) % 7
+            orario_inizio_nuova = None
+            orario_fine_nuova = None
+
+        db_pv.add(Campionato(
+            slot=slot, giorno_settimana=giorno_nuova_edizione, numero_edizione=nuovo_numero,
+            orario_inizio=orario_inizio_nuova, orario_fine=orario_fine_nuova,
+        ))
+        creati += 1
+
+    db_pv.commit()
+    return creati
+
+
 def genera_tornei_futuri(db_pv: Session) -> int:
     """
-    Assicura che esistano righe Torneo per ogni giorno lavorativo (lun-ven)
-    dei prossimi N giorni (vedi config), agganciate al campionato APERTO
-    di quel giorno della settimana - creandolo (edizione 1) se non ne
-    esiste ancora nessuno. Idempotente: non duplica un torneo già
-    esistente per la stessa data.
+    Assicura che esista un'edizione APERTA per ognuno degli slot (vedi
+    assicura_slot_campionati_esistano), poi per ogni giorno dei prossimi
+    N giorni (vedi config, ora tutti i 7 giorni della settimana), genera
+    un Torneo per ogni campionato APERTO il cui giorno_settimana
+    coincide con quel giorno - può essere più di uno slot lo stesso
+    giorno, cosa impossibile prima quando il giorno ERA l'identità del
+    campionato.
+
+    Idempotente: non duplica un torneo già esistente per la stessa
+    combinazione data+campionato.
 
     Ritorna il numero di nuovi tornei creati (comodo per i test/log).
     """
     oggi = _adesso_italia().date()
     creati = 0
 
+    assicura_slot_campionati_esistano(db_pv)
+
+    # 2. Genera i tornei per i prossimi giorni, uno per ogni campionato
+    #    aperto il cui giorno_settimana coincide con quel giorno.
     for offset in range(GIORNI_TORNEI_DA_GENERARE_IN_ANTICIPO):
         giorno_data = oggi + timedelta(days=offset)
         giorno_settimana = giorno_data.weekday()  # 0=lunedì ... 6=domenica
-        if giorno_settimana > 4:
-            continue  # solo lun-ven
 
-        esiste_gia = db_pv.query(Torneo).filter(Torneo.data == giorno_data).first()
-        if esiste_gia is not None:
-            continue
-
-        campionato = (
+        campionati_di_quel_giorno = (
             db_pv.query(Campionato)
             .filter(Campionato.giorno_settimana == giorno_settimana, Campionato.stato == "APERTO")
-            .first()
+            .all()
         )
-        if campionato is None:
-            ultima_edizione = (
-                db_pv.query(Campionato)
-                .filter(Campionato.giorno_settimana == giorno_settimana)
-                .order_by(Campionato.numero_edizione.desc())
+        for campionato in campionati_di_quel_giorno:
+            esiste_gia = (
+                db_pv.query(Torneo)
+                .filter(Torneo.data == giorno_data, Torneo.campionato_id == campionato.id)
                 .first()
             )
-            nuovo_numero = (ultima_edizione.numero_edizione + 1) if ultima_edizione else 1
-            campionato = Campionato(giorno_settimana=giorno_settimana, numero_edizione=nuovo_numero)
-            db_pv.add(campionato)
-            db_pv.flush()
+            if esiste_gia is not None:
+                continue
 
-        numero_tappa_attuale = db_pv.query(Torneo).filter(Torneo.campionato_id == campionato.id).count() + 1
-
-        db_pv.add(Torneo(
-            campionato_id=campionato.id,
-            data=giorno_data,
-            giorno_settimana=giorno_settimana,
-            numero_tappa=numero_tappa_attuale,
-            stato="PROGRAMMATO",
-        ))
-        creati += 1
+            numero_tappa_attuale = db_pv.query(Torneo).filter(Torneo.campionato_id == campionato.id).count() + 1
+            db_pv.add(Torneo(
+                campionato_id=campionato.id,
+                data=giorno_data,
+                giorno_settimana=giorno_settimana,
+                numero_tappa=numero_tappa_attuale,
+                stato="PROGRAMMATO",
+            ))
+            creati += 1
 
     db_pv.commit()
     return creati
@@ -152,15 +205,15 @@ def job_invia_richieste_iscrizione(db_pv: Session, torneo_id_specifico: int | No
             if adesso < soglia:
                 continue
 
-        bit_giorno = 1 << torneo.giorno_settimana
+        bit_slot = 1 << (campionato.slot - 1) if campionato else 0
         utenti_da_contattare = (
             db_pv.query(UtentePV)
             .filter(
                 UtentePV.stato_account == "ATTIVO",
-                UtentePV.giorni_bitmask.op("&")(bit_giorno) == bit_giorno,
+                UtentePV.campionati_bitmask.op("&")(bit_slot) == bit_slot,
             )
             .all()
-        )
+        ) if bit_slot else []
 
         giorno_leggibile = _NOMI_GIORNI_LEGGIBILI[torneo.giorno_settimana].capitalize()
         data_leggibile = torneo.data.strftime("%d/%m")
