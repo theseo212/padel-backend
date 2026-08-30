@@ -66,7 +66,7 @@
     }
     button:hover { background: #c3ddfd; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    #risultato {
+    #risultato, #risultato-genera-tornei {
         margin-top: 16px;
         padding: 12px 14px;
         border-radius: 8px;
@@ -75,8 +75,8 @@
         white-space: pre-wrap;
         display: none;
     }
-    #risultato.ok { background: #d5f2df; color: #1a7a3a; display: block; }
-    #risultato.errore { background: #fbdcdc; color: #a3231f; display: block; }
+    #risultato.ok, #risultato-genera-tornei.ok { background: #d5f2df; color: #1a7a3a; display: block; }
+    #risultato.errore, #risultato-genera-tornei.errore { background: #fbdcdc; color: #a3231f; display: block; }
     .nota { font-size: 12px; color: #888; margin-top: 4px; }
 </style>
 </head>
@@ -90,6 +90,13 @@
     <a href="/admin/palavillage/database">Database</a>
     <a href="/admin/palavillage/forza" class="attivo">Strumenti</a>
 </nav>
+
+<div class="riquadro">
+    <p style="margin-top:0; font-weight:600;">0. Genera i prossimi tornei</p>
+    <p class="nota" style="margin-bottom:14px;">Normalmente gira da sola ogni ora - usa questo pulsante se hai appena configurato/cambiato i campionati e non vuoi aspettare per vederli comparire nella tabella Tornei.</p>
+    <button onclick="forzaGeneraTornei()">Forza generazione tornei</button>
+    <div id="risultato-genera-tornei"></div>
+</div>
 
 <div class="riquadro">
     <label for="torneo-id">Id del torneo</label>
@@ -107,6 +114,21 @@
 </div>
 
 <script>
+async function forzaGeneraTornei() {
+    const risultato = document.getElementById('risultato-genera-tornei');
+    risultato.className = '';
+    risultato.style.display = '';
+    try {
+        const risposta = await fetch('/admin/palavillage/forza-genera-tornei', { method: 'POST' });
+        const dati = await risposta.json();
+        risultato.className = risposta.ok ? 'ok' : 'errore';
+        risultato.textContent = JSON.stringify(dati, null, 2);
+    } catch (e) {
+        risultato.className = 'errore';
+        risultato.textContent = 'Impossibile contattare il server: ' + e.message;
+    }
+}
+
 async function forza(azione) {
     const id = document.getElementById('torneo-id').value;
     const risultato = document.getElementById('risultato');
