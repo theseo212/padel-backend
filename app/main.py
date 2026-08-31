@@ -634,6 +634,9 @@ def crea_tabelle_palavillage():
         connessione.execute(text(
             "ALTER TABLE campionati ADD COLUMN IF NOT EXISTS slot INTEGER"
         ))
+        connessione.execute(text(
+            "ALTER TABLE campionati ADD COLUMN IF NOT EXISTS pubblicato BOOLEAN NOT NULL DEFAULT TRUE"
+        ))
         # Stessa storia del vincolo su Torneo qui sopra: prima un solo
         # campionato per giorno era garantito da (giorno_settimana,
         # numero_edizione) unico; ora l'identità è lo SLOT.
@@ -709,6 +712,7 @@ def elenca_campionati_palavillage(db_pv: Session = Depends(get_db_pv)):
             "nome_visualizzato": _nome_campionato_leggibile(c),
             "orario_inizio": c.orario_inizio,
             "orario_fine": c.orario_fine,
+            "pubblicato": c.pubblicato,
             "stato": c.stato,
         }
         for c in campionati
@@ -757,10 +761,12 @@ def rinomina_campionato_palavillage(campionato_id: int, dati: dict, db_pv: Sessi
     campionato.orario_fine = nuovo_orario_fine
     if nuovo_giorno is not None:
         campionato.giorno_settimana = nuovo_giorno
+    if "pubblicato" in dati:
+        campionato.pubblicato = bool(dati.get("pubblicato"))
     db_pv.commit()
     return {
         "ok": True, "id": campionato.id, "nome": campionato.nome, "giorno_settimana": campionato.giorno_settimana,
-        "orario_inizio": campionato.orario_inizio, "orario_fine": campionato.orario_fine,
+        "orario_inizio": campionato.orario_inizio, "orario_fine": campionato.orario_fine, "pubblicato": campionato.pubblicato,
     }
 
 
@@ -987,7 +993,7 @@ def elenco_campionati_pubblico_palavillage(db_pv: Session = Depends(get_db_pv)):
 
     campionati = (
         db_pv.query(Campionato)
-        .filter(Campionato.stato == "APERTO")
+        .filter(Campionato.stato == "APERTO", Campionato.pubblicato == True)  # noqa: E712
         .order_by(Campionato.slot)
         .all()
     )
