@@ -83,6 +83,14 @@ def assicura_slot_campionati_esistano(db_pv: Session) -> int:
             .order_by(Campionato.numero_edizione.desc())
             .first()
         )
+
+        # Se l'admin ha disattivato questo slot (pubblicato=False),
+        # rispettiamo la sua scelta e NON ricreiamo nulla - a differenza
+        # del comportamento di riserva, che altrimenti farebbe
+        # ricomparire da solo uno slot che si voleva tenere spento.
+        if ultima_edizione is not None and not ultima_edizione.pubblicato:
+            continue
+
         nuovo_numero = (ultima_edizione.numero_edizione + 1) if ultima_edizione else 1
         if ultima_edizione:
             # L'edizione nuova eredita giorno e orario da quella precedente
@@ -135,7 +143,7 @@ def genera_tornei_futuri(db_pv: Session) -> int:
 
         campionati_di_quel_giorno = (
             db_pv.query(Campionato)
-            .filter(Campionato.giorno_settimana == giorno_settimana, Campionato.stato == "APERTO")
+            .filter(Campionato.giorno_settimana == giorno_settimana, Campionato.stato == "APERTO", Campionato.pubblicato == True)  # noqa: E712
             .all()
         )
         for campionato in campionati_di_quel_giorno:

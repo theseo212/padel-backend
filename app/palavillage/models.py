@@ -110,6 +110,16 @@ class Campionato(BasePV):
     orario_inizio = Column(String(5), nullable=True)  # formato "HH:MM"
     orario_fine = Column(String(5), nullable=True)  # formato "HH:MM", solo per mostrarlo nei messaggi
 
+    # Interruttore vero e proprio: se False, questo slot NON appare nella
+    # homepage, non genera nuovi tornei, e soprattutto NON viene mai
+    # ricreato automaticamente da assicura_slot_campionati_esistano - a
+    # differenza di "stato" (APERTO/CHIUSO), che riguarda solo il ciclo
+    # di vita di UNA stagione (classifica congelata, nuova edizione),
+    # questo riguarda se il circolo vuole usare lo slot in generale.
+    # Un circolo che pubblica solo 4 campionati su 6 tiene gli altri 2
+    # con pubblicato=False.
+    pubblicato = Column(Boolean, nullable=False, default=True)
+
     stato = Column(String(15), default="APERTO")  # APERTO, CHIUSO
 
     data_apertura = Column(DateTime, server_default=func.now())
