@@ -273,15 +273,20 @@ function renderizzaTabellaCampionati(campionati) {
         const opzioniGiorno = NOMI_GIORNI.map((nome, indice) =>
             `<option value="${indice}" ${indice === c.giorno_settimana ? 'selected' : ''}>${nome}</option>`
         ).join('');
+        const stileRigaSpenta = c.pubblicato ? '' : 'opacity: 0.55;';
         return `
-            <tr>
-                <td>Campionato ${c.slot} — edizione #${c.numero_edizione}</td>
+            <tr style="${stileRigaSpenta}">
+                <td>Campionato ${c.slot} — edizione #${c.numero_edizione}${c.pubblicato ? '' : ' <span class="badge-stato" style="background:#eee;color:#888;">SPENTO</span>'}</td>
                 <td>
                     <div class="riga-campionato-nome">
                         <input type="text" id="nome-campionato-${c.id}" value="${c.nome || ''}" placeholder="${c.nome_visualizzato}">
                         <select id="giorno-campionato-${c.id}" ${c.stato !== 'APERTO' ? 'disabled' : ''}>${opzioniGiorno}</select>
                         <input type="text" class="input-orario" id="orario-inizio-${c.id}" value="${c.orario_inizio || ''}" placeholder="12:00" title="Orario inizio (HH:MM)">
                         <input type="text" class="input-orario" id="orario-fine-${c.id}" value="${c.orario_fine || ''}" placeholder="13:30" title="Orario fine (HH:MM, facoltativo)">
+                        <label style="display:flex; align-items:center; gap:4px; font-size:13px; white-space:nowrap;" title="Se spento, questo campionato non compare in homepage e non genera nuovi tornei">
+                            <input type="checkbox" id="pubblicato-campionato-${c.id}" ${c.pubblicato ? 'checked' : ''} style="width:auto;">
+                            Pubblicato
+                        </label>
                         <button class="btn-blu" onclick="salvaNomeCampionato(${c.id})">Salva</button>
                     </div>
                 </td>
@@ -305,15 +310,16 @@ async function salvaNomeCampionato(id) {
     const nuovoGiorno = document.getElementById(`giorno-campionato-${id}`).value;
     const orarioInizio = document.getElementById(`orario-inizio-${id}`).value.trim();
     const orarioFine = document.getElementById(`orario-fine-${id}`).value.trim();
+    const pubblicato = document.getElementById(`pubblicato-campionato-${id}`).checked;
     try {
         const risposta = await fetch(`/admin/palavillage/campionati/${id}/nome`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome: nuovoNome, giorno_settimana: nuovoGiorno, orario_inizio: orarioInizio, orario_fine: orarioFine }),
+            body: JSON.stringify({ nome: nuovoNome, giorno_settimana: nuovoGiorno, orario_inizio: orarioInizio, orario_fine: orarioFine, pubblicato }),
         });
         const dati = await risposta.json();
         if (!risposta.ok) throw new Error(dati.detail || 'Errore nel salvataggio');
-        mostraMessaggio('msg-campionati', 'Nome, giorno e orario aggiornati.', 'ok');
+        mostraMessaggio('msg-campionati', 'Nome, giorno, orario e pubblicazione aggiornati.', 'ok');
         caricaCampionati();
     } catch (e) {
         mostraMessaggio('msg-campionati', e.message, 'errore');
