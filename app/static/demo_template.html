@@ -159,10 +159,11 @@ function cambiaTemplate() {
     }
 
     t.variabili.forEach((etichetta, i) => {
+        const valoreEsempio = (t.valori_esempio && t.valori_esempio[i]) ? t.valori_esempio[i] : '';
         contenitore.innerHTML += `
             <div class="campo-variabile">
                 <label for="var-${i}">${etichetta}</label>
-                <input type="text" id="var-${i}" placeholder="${etichetta}">
+                <input type="text" id="var-${i}" placeholder="${etichetta}" value="${valoreEsempio.replace(/"/g, '&quot;')}">
             </div>
         `;
     });
