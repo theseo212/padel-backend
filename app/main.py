@@ -3024,27 +3024,54 @@ def pagina_admin_demo_template():
 # app/services/whatsapp.py - se in futuro cambia una funzione di invio,
 # ricontrolla/aggiorna anche questo elenco.
 TEMPLATE_DEMO_INFO = [
-    ("TEMPLATE_OTP", "OTP - Codice di verifica", ["Codice (es. 482913)"]),
-    ("TEMPLATE_RIEPILOGO", "Riepilogo richiesta", [
-        "Nome", "Tipo partita", "Giorno", "Orari", "Livello", "Lato", "Circoli", "Numero telefono (senza +, per il link)",
-    ]),
-    ("TEMPLATE_PROPOSTA_GRUPPO", "Proposta gruppo", ["Circolo", "Giorno", "Orario", "Giocatori"]),
-    ("TEMPLATE_ANNULLAMENTO", "Annullamento gruppo", ["Motivo"]),
-    ("TEMPLATE_GRUPPO_CONFERMATO", "Gruppo confermato (in attesa prenotazione)", ["Circolo", "Giorno", "Orario"]),
-    ("TEMPLATE_PRENOTAZIONE_CONFERMATA", "Prenotazione confermata", ["Circolo", "Giorno", "Orario", "Campo"]),
-    ("TEMPLATE_PRENOTAZIONE_FALLITA", "Prenotazione fallita (campo non disponibile)", ["Circolo"]),
-    ("TEMPLATE_RICHIESTA_FEEDBACK", "Richiesta feedback (voto compagno)", ["Nome compagno", "Riferimento partita (circolo + data)"]),
-    ("TEMPLATE_SOSPENSIONE", "Sospensione account", ["Giorni di sospensione (numero)"]),
-    ("TEMPLATE_PROMEMORIA_MANCATA_PARTITA", "Promemoria mancata partita", [
-        "Nome", "Giorno", "Fascia oraria", "ID richiesta (per il bottone Annulla)",
-    ]),
-    ("TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO", "Richiesta prenotazione al circolo", [
-        "Circolo", "Giorno", "Orario", "Giocatori", "Token conferma (per il bottone, es. 1.abc123)",
-    ]),
-    ("TEMPLATE_RICHIESTA_SCADUTA", "Richiesta scaduta (nessun compagno trovato)", ["Tipo partita", "Giorno", "Fascia oraria"]),
-    ("TEMPLATE_CONFERMA_BOZZA_VOCALE", "Conferma bozza da richiesta vocale", ["Giorno", "Fascia oraria"]),
-    ("TEMPLATE_MODIFICA_PREFERENZE_VOCALE", "Modifica preferenze (dopo richiesta vocale)", ["Giorno"]),
-    ("TEMPLATE_AVVISO_MESSAGGIO_NON_GESTITO", "Avviso messaggio non gestito (all'operatore)", ["Numero mittente", "Testo ricevuto"]),
+    ("TEMPLATE_OTP", "OTP - Codice di verifica",
+     ["Codice (es. 482913)"],
+     ["482913"]),
+    ("TEMPLATE_RIEPILOGO", "Riepilogo richiesta",
+     ["Nome", "Tipo partita", "Giorno", "Orari", "Livello", "Lato", "Circoli", "Numero telefono (senza +, per il link)"],
+     ["Mario Rossi", "MASCHILE", "2026-09-25", "18:00-21:00", "4.00", "Destra", "Padel Arena Torino", "393331112233"]),
+    ("TEMPLATE_PROPOSTA_GRUPPO", "Proposta gruppo",
+     ["Circolo", "Giorno", "Orario", "Giocatori"],
+     ["Padel Arena Torino", "2026-09-25", "18:30", "Mario R. (DX), Luisa F. (SX), Paolo V. (DX), Anna N. (SX)"]),
+    ("TEMPLATE_ANNULLAMENTO", "Annullamento gruppo",
+     ["Motivo"],
+     ["Tempo scaduto: non tutti hanno confermato in tempo"]),
+    ("TEMPLATE_GRUPPO_CONFERMATO", "Gruppo confermato (in attesa prenotazione)",
+     ["Circolo", "Giorno", "Orario"],
+     ["Padel Arena Torino", "2026-09-25", "18:30"]),
+    ("TEMPLATE_PRENOTAZIONE_CONFERMATA", "Prenotazione confermata",
+     ["Circolo", "Giorno", "Orario", "Campo"],
+     ["Padel Arena Torino", "2026-09-25", "18:30", "3"]),
+    ("TEMPLATE_PRENOTAZIONE_FALLITA", "Prenotazione fallita (campo non disponibile)",
+     ["Circolo"],
+     ["Padel Arena Torino"]),
+    ("TEMPLATE_RICHIESTA_FEEDBACK", "Richiesta feedback (voto compagno)",
+     ["Nome compagno", "Riferimento partita (circolo + data)"],
+     ["Mario Rossi", "Padel Arena Torino del 2026-09-25"]),
+    ("TEMPLATE_SOSPENSIONE", "Sospensione account",
+     ["Giorni di sospensione (numero)"],
+     ["7"]),
+    ("TEMPLATE_PROMEMORIA_MANCATA_PARTITA", "Promemoria mancata partita",
+     ["Nome", "Giorno", "Fascia oraria", "ID richiesta (per il bottone Annulla)"],
+     ["Mario", "2026-09-25", "18:00-21:00", "42"]),
+    ("TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO", "Richiesta prenotazione al circolo",
+     ["Circolo", "Giorno", "Orario", "Giocatori", "Token conferma (per il bottone, es. 1.abc123)"],
+     ["Padel Arena Torino", "2026-09-25", "18:30",
+      "Mario Rossi: +393331112233 (disp. 17:00-21:00) - Luisa Fabro: +393332223344 (disp. 18:00-22:00) - "
+      "Paolo Verdi: +393333334455 (disp. 16:00-20:00) - Anna Neri: +393334445566 (disp. 17:30-21:30)",
+      "demo"]),
+    ("TEMPLATE_RICHIESTA_SCADUTA", "Richiesta scaduta (nessun compagno trovato)",
+     ["Tipo partita", "Giorno", "Fascia oraria"],
+     ["MASCHILE", "2026-09-20", "12:00-17:00"]),
+    ("TEMPLATE_CONFERMA_BOZZA_VOCALE", "Conferma bozza da richiesta vocale",
+     ["Giorno", "Fascia oraria"],
+     ["2026-09-25", "09:00-13:00"]),
+    ("TEMPLATE_MODIFICA_PREFERENZE_VOCALE", "Modifica preferenze (dopo richiesta vocale)",
+     ["Giorno"],
+     ["2026-09-25"]),
+    ("TEMPLATE_AVVISO_MESSAGGIO_NON_GESTITO", "Avviso messaggio non gestito (all'operatore)",
+     ["Numero mittente", "Testo ricevuto"],
+     ["+393339998877", "Ciao Anna, come stai?"]),
 ]
 
 
@@ -3057,7 +3084,7 @@ def lista_template_demo():
     codici HX cambiano nel tempo.
     """
     risultato = []
-    for chiave_env, nome_leggibile, etichette_variabili in TEMPLATE_DEMO_INFO:
+    for chiave_env, nome_leggibile, etichette_variabili, valori_esempio in TEMPLATE_DEMO_INFO:
         content_sid = getattr(config, chiave_env, None)
         risultato.append({
             "chiave": chiave_env,
@@ -3065,6 +3092,7 @@ def lista_template_demo():
             "content_sid": content_sid,
             "configurato": bool(content_sid),
             "variabili": etichette_variabili,
+            "valori_esempio": valori_esempio,
         })
     return risultato
 
