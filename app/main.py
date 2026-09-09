@@ -19,7 +19,7 @@ import secrets
 from fastapi.responses import FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import text
+from sqlalchemy import text, func
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.database import get_db, SessionLocal, engine, Base
@@ -3004,6 +3004,84 @@ def pagina_admin_database():
     import os
     percorso = os.path.join(os.path.dirname(__file__), "static", "admin_database.html")
     return FileResponse(percorso)
+
+
+@app.get("/admin/statistiche", dependencies=[Depends(verifica_credenziali_admin)])
+def pagina_admin_statistiche():
+    """Serve la pagina web del pannello statistiche."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "statistiche.html")
+    return FileResponse(percorso)
+
+
+@app.get("/admin/api/statistiche", dependencies=[Depends(verifica_credenziali_admin)])
+def dati_statistiche(inizio: str, fine: str):
+    """
+    Restituisce i numeri chiave per il periodo richiesto (date incluse
+    entrambe, formato YYYY-MM-DD) - pensato per una pagina in stile
+    Analytics nel pannello admin, utile soprattutto nei primi giorni
+    dopo il lancio per capire a colpo d'occhio come sta andando.
+    """
+    from datetime import datetime as _datetime, timedelta as _timedelta
+
+    try:
+        data_inizio = _datetime.strptime(inizio, "%Y-%m-%d")
+        data_fine = _datetime.strptime(fine, "%Y-%m-%d") + _timedelta(days=1)  # fino a fine giornata inclusa
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date non valide, usa il formato YYYY-MM-DD.")
+
+    db = SessionLocal()
+    try:
+        nuovi_utenti = db.query(models.Utente).filter(
+            models.Utente.data_creazione >= data_inizio, models.Utente.data_creazione < data_fine,
+        ).count()
+
+        richieste_periodo = db.query(models.Richiesta).filter(
+            models.Richiesta.data_creazione >= data_inizio, models.Richiesta.data_creazione < data_fine,
+        )
+        nuove_richieste = richieste_periodo.count()
+
+        # Suddivisione per stato, utile per capire "dove si perde la gente"
+        # (es. troppe SCADUTA = scarsità di utenti compatibili, non un bug).
+        righe_stato = (
+            richieste_periodo.with_entities(models.Richiesta.stato, func.count(models.Richiesta.id))
+            .group_by(models.Richiesta.stato)
+            .all()
+        )
+        richieste_per_stato = {stato: conteggio for stato, conteggio in righe_stato}
+
+        partite_giocate = db.query(models.Partita).filter(
+            models.Partita.stato == "GIOCATA",
+            models.Partita.data_prenotazione >= data_inizio, models.Partita.data_prenotazione < data_fine,
+        ).count()
+
+        # Tasso di conversione: quante richieste del periodo sono arrivate
+        # a diventare una CONFERMATA (non necessariamente già giocata,
+        # ma comunque un gruppo trovato con successo) - il numero più
+        # indicativo di quanto bene funzioni il matching nei primi giorni.
+        confermate = richieste_per_stato.get("CONFERMATA", 0)
+        tasso_conversione = round((confermate / nuove_richieste * 100), 1) if nuove_richieste > 0 else None
+
+        circolo_piu_richiesto = (
+            db.query(models.Circolo.nome, func.count(models.RichiestaCircolo.richiesta_id).label("n"))
+            .join(models.RichiestaCircolo, models.RichiestaCircolo.circolo_id == models.Circolo.id)
+            .join(models.Richiesta, models.Richiesta.id == models.RichiestaCircolo.richiesta_id)
+            .filter(models.Richiesta.data_creazione >= data_inizio, models.Richiesta.data_creazione < data_fine)
+            .group_by(models.Circolo.nome)
+            .order_by(func.count(models.RichiestaCircolo.richiesta_id).desc())
+            .first()
+        )
+
+        return {
+            "nuovi_utenti": nuovi_utenti,
+            "nuove_richieste": nuove_richieste,
+            "partite_giocate": partite_giocate,
+            "tasso_conversione": tasso_conversione,
+            "richieste_per_stato": richieste_per_stato,
+            "circolo_piu_richiesto": circolo_piu_richiesto[0] if circolo_piu_richiesto else None,
+        }
+    finally:
+        db.close()
 
 
 @app.get("/admin/demo-template", dependencies=[Depends(verifica_credenziali_admin)])
