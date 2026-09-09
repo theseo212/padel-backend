@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Statistiche — Pannello AnnaPadel</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 16px; margin: 24px 0 12px; color: #333; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    nav.menu-admin {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0 20px;
+        flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none;
+        color: #444;
+        background: white;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
+
+    .periodi {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+    }
+    .periodi button {
+        padding: 8px 14px;
+        border: 1px solid #d5d7db;
+        background: white;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        font-weight: 500;
+        color: #444;
+    }
+    .periodi button.attivo {
+        background: #1B3A63;
+        color: white;
+        border-color: #1B3A63;
+    }
+    .periodo-personalizzato {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        font-size: 13px;
+    }
+    .periodo-personalizzato input[type="date"] {
+        padding: 7px 9px;
+        border: 1px solid #d5d7db;
+        border-radius: 7px;
+        font-size: 13px;
+    }
+    .periodo-personalizzato button {
+        padding: 7px 14px;
+        border: none;
+        background: #7CB342;
+        color: white;
+        border-radius: 7px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .griglia-numeri {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 14px;
+        margin-bottom: 24px;
+    }
+    .scatola-numero {
+        background: white;
+        border-radius: 10px;
+        padding: 18px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .scatola-numero .valore {
+        font-size: 32px;
+        font-weight: 700;
+        color: #1B3A63;
+        line-height: 1.1;
+    }
+    .scatola-numero .etichetta {
+        font-size: 13px;
+        color: #666;
+        margin-top: 4px;
+    }
+    .scatola-numero.evidenza .valore { color: #7CB342; }
+
+    .scatola {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        max-width: 500px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-bottom: 20px;
+    }
+    .riga-stato {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 14px;
+    }
+    .riga-stato:last-child { border-bottom: none; }
+    .riga-stato .conteggio { font-weight: 600; }
+
+    .vuoto { color: #999; font-size: 14px; padding: 10px 0; }
+    .caricamento { color: #999; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>🎾 Pannello Operatore</h1>
+<p class="sottotitolo">Gestione prenotazioni campi e partite giocate — AnnaPadel</p>
+
+<nav class="menu-admin">
+    <a href="/admin">Gruppi in attesa</a>
+    <a href="/admin/contatti">Messaggi dal form</a>
+    <a href="/admin/circoli">Gestione Circoli</a>
+    <a href="/admin/report">Report Partite</a>
+    <a href="/admin/database">Database</a>
+    <a href="/admin/demo-template">Demo Template</a>
+    <a href="/admin/statistiche" class="attivo">Statistiche</a>
+</nav>
+
+<h2>Andamento del periodo selezionato</h2>
+
+<div class="periodi" id="periodi-rapidi">
+    <button data-periodo="oggi">Oggi</button>
+    <button data-periodo="ieri">Ieri</button>
+    <button data-periodo="settimana">Questa settimana</button>
+    <button data-periodo="mese">Questo mese</button>
+    <button data-periodo="mese_scorso">Mese scorso</button>
+</div>
+
+<div class="periodo-personalizzato">
+    <span>Personalizza:</span>
+    <input type="date" id="data-inizio">
+    <span>→</span>
+    <input type="date" id="data-fine">
+    <button onclick="applicaPeriodoPersonalizzato()">Applica</button>
+</div>
+
+<div id="contenuto-statistiche">
+    <p class="caricamento">Caricamento in corso…</p>
+</div>
+
+<script>
+function formattaData(d) {
+    return d.toISOString().split('T')[0];
+}
+
+function calcolaPeriodo(chiave) {
+    const oggi = new Date();
+    oggi.setHours(0, 0, 0, 0);
+
+    if (chiave === 'oggi') {
+        return [formattaData(oggi), formattaData(oggi)];
+    }
+    if (chiave === 'ieri') {
+        const ieri = new Date(oggi);
+        ieri.setDate(ieri.getDate() - 1);
+        return [formattaData(ieri), formattaData(ieri)];
+    }
+    if (chiave === 'settimana') {
+        // Lunedì come primo giorno della settimana
+        const giornoSettimana = oggi.getDay() === 0 ? 7 : oggi.getDay();
+        const lunedi = new Date(oggi);
+        lunedi.setDate(oggi.getDate() - (giornoSettimana - 1));
+        return [formattaData(lunedi), formattaData(oggi)];
+    }
+    if (chiave === 'mese') {
+        const primoDelMese = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
+        return [formattaData(primoDelMese), formattaData(oggi)];
+    }
+    if (chiave === 'mese_scorso') {
+        const primoMeseScorso = new Date(oggi.getFullYear(), oggi.getMonth() - 1, 1);
+        const ultimoMeseScorso = new Date(oggi.getFullYear(), oggi.getMonth(), 0);
+        return [formattaData(primoMeseScorso), formattaData(ultimoMeseScorso)];
+    }
+}
+
+const ETICHETTE_STATO = {
+    'IN_RICERCA': 'In ricerca',
+    'LOCKED': 'In fase di conferma',
+    'CONFERMATA': 'Confermata (gruppo trovato)',
+    'SCADUTA': 'Scaduta (nessun compagno trovato)',
+    'ANNULLATA': 'Annullata dall\'utente',
+};
+
+async function caricaStatistiche(inizio, fine) {
+    const contenitore = document.getElementById('contenuto-statistiche');
+    contenitore.innerHTML = '<p class="caricamento">Caricamento in corso…</p>';
+
+    try {
+        const risposta = await fetch(`/admin/api/statistiche?inizio=${inizio}&fine=${fine}`);
+        if (!risposta.ok) {
+            const errore = await risposta.json();
+            contenitore.innerHTML = `<p class="vuoto">Errore: ${errore.detail || 'richiesta non riuscita'}</p>`;
+            return;
+        }
+        const dati = await risposta.json();
+
+        let righeStatoHtml = '';
+        const statiConDati = Object.keys(dati.richieste_per_stato);
+        if (statiConDati.length === 0) {
+            righeStatoHtml = '<p class="vuoto">Nessuna richiesta in questo periodo.</p>';
+        } else {
+            for (const [stato, conteggio] of Object.entries(dati.richieste_per_stato)) {
+                const etichetta = ETICHETTE_STATO[stato] || stato;
+                righeStatoHtml += `
+                    <div class="riga-stato">
+                        <span>${etichetta}</span>
+                        <span class="conteggio">${conteggio}</span>
+                    </div>
+                `;
+            }
+        }
+
+        const tassoTesto = dati.tasso_conversione === null ? '—' : `${dati.tasso_conversione}%`;
+
+        contenitore.innerHTML = `
+            <div class="griglia-numeri">
+                <div class="scatola-numero">
+                    <div class="valore">${dati.nuovi_utenti}</div>
+                    <div class="etichetta">Nuovi utenti</div>
+                </div>
+                <div class="scatola-numero">
+                    <div class="valore">${dati.nuove_richieste}</div>
+                    <div class="etichetta">Nuove richieste</div>
+                </div>
+                <div class="scatola-numero">
+                    <div class="valore">${dati.partite_giocate}</div>
+                    <div class="etichetta">Partite giocate</div>
+                </div>
+                <div class="scatola-numero evidenza">
+                    <div class="valore">${tassoTesto}</div>
+                    <div class="etichetta">Tasso di conversione (richieste → confermate)</div>
+                </div>
+            </div>
+
+            <div class="scatola">
+                <strong style="font-size:14px;">Richieste per stato</strong>
+                <div style="margin-top:10px;">${righeStatoHtml}</div>
+            </div>
+
+            <div class="scatola">
+                <strong style="font-size:14px;">Circolo più richiesto</strong>
+                <p style="margin:8px 0 0; font-size:14px; color:#444;">
+                    ${dati.circolo_piu_richiesto || 'Nessun dato per questo periodo'}
+                </p>
+            </div>
+        `;
+    } catch (e) {
+        contenitore.innerHTML = `<p class="vuoto">Impossibile contattare il server: ${e.message}</p>`;
+    }
+}
+
+function selezionaPeriodoRapido(chiave, bottoneCliccato) {
+    document.querySelectorAll('#periodi-rapidi button').forEach(b => b.classList.remove('attivo'));
+    bottoneCliccato.classList.add('attivo');
+    const [inizio, fine] = calcolaPeriodo(chiave);
+    document.getElementById('data-inizio').value = inizio;
+    document.getElementById('data-fine').value = fine;
+    caricaStatistiche(inizio, fine);
+}
+
+function applicaPeriodoPersonalizzato() {
+    document.querySelectorAll('#periodi-rapidi button').forEach(b => b.classList.remove('attivo'));
+    const inizio = document.getElementById('data-inizio').value;
+    const fine = document.getElementById('data-fine').value;
+    if (!inizio || !fine) {
+        alert('Scegli entrambe le date.');
+        return;
+    }
+    caricaStatistiche(inizio, fine);
+}
+
+document.querySelectorAll('#periodi-rapidi button').forEach(bottone => {
+    bottone.addEventListener('click', () => selezionaPeriodoRapido(bottone.dataset.periodo, bottone));
+});
+
+// Al primo caricamento, mostra "Oggi" di default
+document.querySelector('#periodi-rapidi button[data-periodo="oggi"]').click();
+</script>
+
+</body>
+</html>
