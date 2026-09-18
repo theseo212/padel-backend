@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from app import models, config
 from app.services.whatsapp import invia_promemoria_mancata_partita, invia_richiesta_scaduta
 from app.services.bitmask import bitmask_a_fasce_leggibili
+from app.services.bitmask_tipo import bitmask_tipo_a_stringa_leggibile
 
 
 def _primo_slot_disponibile(bitmask: int) -> int | None:
@@ -128,14 +129,15 @@ def controlla_richieste_scadute(db: Session):
     for richiesta in richieste_scadute:
         richiesta.stato = "SCADUTA"
         fascia_leggibile = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask))
+        tipo_partita_leggibile = bitmask_tipo_a_stringa_leggibile(richiesta.tipi_partita_bitmask)
         testo = (
             f"Purtroppo non sono riuscita a trovarti compagni compatibili per la tua richiesta "
-            f"{richiesta.tipo_partita} del {richiesta.giorno} ({fascia_leggibile}). "
+            f"{tipo_partita_leggibile} del {richiesta.giorno} ({fascia_leggibile}). "
             f"Se vuoi, inserisci una nuova richiesta per riprovare cliccando qui sotto."
         )
         invia_richiesta_scaduta(
             richiesta.utente.whatsapp_numero, testo,
-            tipo_partita=richiesta.tipo_partita, giorno=str(richiesta.giorno), fascia_oraria=fascia_leggibile,
+            tipo_partita=tipo_partita_leggibile, giorno=str(richiesta.giorno), fascia_oraria=fascia_leggibile,
         )
 
     db.commit()

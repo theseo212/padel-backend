@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, config
+from app.services.bitmask_tipo import bitmask_tipo_a_lista, scegli_tipo_singolo
 from app.matching.compatibilita import (
     calcola_tolleranza, lato_compatibile, gruppo_livelli_compatibile,
     trova_slot_partita, conta_slot_consecutivi_massimi,
@@ -107,8 +108,10 @@ def calcola_punteggio(gruppo: list, slot_partita: int, circolo, adesso: datetime
 
 def trova_candidati_per_seed(seed, richieste_attive: list) -> list:
     """
-    Primo filtro, economico: stesso giorno, stesso tipo partita,
-    almeno un circolo in comune, esclude il seed stesso.
+    Primo filtro, economico: stesso giorno, ALMENO UN tipo partita in
+    comune (non più necessariamente lo stesso identico, un utente può
+    accettarne più di uno - punto 21), almeno un circolo in comune,
+    esclude il seed stesso.
     """
     candidati = []
     circoli_seed = set(c.id for c in seed.circoli)
@@ -118,7 +121,7 @@ def trova_candidati_per_seed(seed, richieste_attive: list) -> list:
             continue
         if r.giorno != seed.giorno:
             continue
-        if r.tipo_partita != seed.tipo_partita:
+        if not (r.tipi_partita_bitmask & seed.tipi_partita_bitmask):
             continue
         if r.stato != "IN_RICERCA":
             continue
@@ -149,6 +152,18 @@ def genera_combinazioni_valide(seed, candidati: list, adesso: datetime, db: Sess
         if not gruppo_livelli_compatibile(gruppo):
             continue
 
+        # controllo tipo partita: serve un tipo in comune a TUTTI e 4, non
+        # solo a coppie (il filtro iniziale con il seed non basta - due
+        # membri potrebbero avere in comune un tipo diverso da quello che
+        # hanno in comune gli altri due, senza che ce ne sia uno unico
+        # condiviso da tutti e 4 insieme - punto 21).
+        intersezione_tipo = seed.tipi_partita_bitmask
+        for r in terna:
+            intersezione_tipo &= r.tipi_partita_bitmask
+        if not intersezione_tipo:
+            continue
+        tipo_scelto = scegli_tipo_singolo(intersezione_tipo)
+
         # controllo circolo comune a tutti e 4 (punto 20)
         comuni = circoli_comuni(gruppo)
         if not comuni:
@@ -168,6 +183,7 @@ def genera_combinazioni_valide(seed, candidati: list, adesso: datetime, db: Sess
             "slot_partita": slot_partita,
             "circolo": circolo_scelto,
             "punteggio": punteggio,
+            "tipo_partita": tipo_scelto,
         })
 
     return gruppi_possibili
@@ -205,6 +221,7 @@ def crea_gruppo_nel_db(db: Session, candidato: dict) -> models.Gruppo:
     nuovo_gruppo = models.Gruppo(
         circolo_id=candidato["circolo"].id,
         giorno=gruppo_dati[0].giorno,
+        tipo_partita=candidato["tipo_partita"],
         slot_inizio=candidato["slot_partita"],
         durata_slot=config.DURATA_MINIMA_PARTITA_SLOT,
         stato="PROPOSTO",
