@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models, config
 from app.services.bitmask import crea_bitmask, bitmask_a_fasce_leggibili
+from app.services.bitmask_tipo import bitmask_tipo_a_stringa_leggibile
 from app.services.trascrizione_vocale import trascrivi_e_interpreta_vocale
 from app.services.whatsapp import (
     invia_messaggio_richiesta_vocale, invia_conferma_bozza_vocale, invia_link_modifica_preferenze_vocale,
@@ -61,7 +62,8 @@ def gestisci_richiesta_vocale(db: Session, numero_whatsapp: str, media_url: str)
         )
         return
 
-    tipo_partita = ultima_richiesta.tipo_partita
+    tipi_partita_bitmask = ultima_richiesta.tipi_partita_bitmask
+    tipo_partita_leggibile = bitmask_tipo_a_stringa_leggibile(tipi_partita_bitmask)
     circoli = ultima_richiesta.circoli
     circoli_ids_csv = ",".join(str(c.id) for c in circoli)
     nomi_circoli = ", ".join(c.nome for c in circoli)
@@ -76,7 +78,7 @@ def gestisci_richiesta_vocale(db: Session, numero_whatsapp: str, media_url: str)
         utente_id=utente.id,
         giorno=risultato["giorno"],
         disponibilita_bitmask=bitmask,
-        tipo_partita=tipo_partita,
+        tipi_partita_bitmask=tipi_partita_bitmask,
         circoli_ids_csv=circoli_ids_csv,
     )
     db.add(bozza)
@@ -90,7 +92,7 @@ def gestisci_richiesta_vocale(db: Session, numero_whatsapp: str, media_url: str)
         f"Giorno: {risultato['giorno']}\n"
         f"Orario: {fascia_leggibile}\n\n"
         f"Uso le tue preferenze abituali:\n"
-        f"Tipo partita: {tipo_partita}\n"
+        f"Tipo partita: {tipo_partita_leggibile}\n"
         f"Lato: {lato_leggibile}\n"
         f"Circoli: {nomi_circoli}\n\n"
         f"Hai {config.MINUTI_SCADENZA_BOZZA_VOCALE} minuti per confermare, altrimenti la richiesta decade."
@@ -145,7 +147,7 @@ def gestisci_conferma_bozza_vocale(db: Session, numero_whatsapp: str, testo_risp
 
     richiesta = models.Richiesta(
         utente_id=utente.id,
-        tipo_partita=bozza.tipo_partita,
+        tipi_partita_bitmask=bozza.tipi_partita_bitmask,
         giorno=bozza.giorno,
         disponibilita_bitmask=bozza.disponibilita_bitmask,
     )
@@ -159,12 +161,13 @@ def gestisci_conferma_bozza_vocale(db: Session, numero_whatsapp: str, testo_risp
     db.commit()
 
     fascia_leggibile = ", ".join(bitmask_a_fasce_leggibili(richiesta.disponibilita_bitmask))
+    tipo_partita_leggibile = bitmask_tipo_a_stringa_leggibile(richiesta.tipi_partita_bitmask)
     nomi_circoli = ", ".join(c.nome for c in circoli)
     lato_leggibile = _LATO_LEGGIBILE.get(utente.lato_preferito, utente.lato_preferito)
 
     testo_conferma = (
         f"Fatto! Richiesta registrata:\n"
-        f"{richiesta.tipo_partita} - {richiesta.giorno}\n"
+        f"{tipo_partita_leggibile} - {richiesta.giorno}\n"
         f"Orari: {fascia_leggibile}\n"
         f"Lato: {lato_leggibile}\n"
         f"Circoli: {nomi_circoli}\n\n"
