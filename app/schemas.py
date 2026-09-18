@@ -26,7 +26,7 @@ class RichiestaCreate(BaseModel):
     accetta_privacy: bool = False
 
     # dati della richiesta specifica (sempre richiesti, ad ogni richiesta)
-    tipo_partita: Literal["MASCHILE", "FEMMINILE", "MISTA"]
+    tipi_partita: list[Literal["MASCHILE", "FEMMINILE", "MISTA"]] = Field(..., min_length=1)
     giorno: date
     fasce_orarie: list[tuple[str, str]] = Field(
         ..., description="Lista di fasce, es. [['18:00','21:00']]"

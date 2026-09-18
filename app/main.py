@@ -25,6 +25,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.database import get_db, SessionLocal, engine, Base
 from app import models, schemas, config
 from app.services.bitmask import crea_bitmask, bitmask_a_fasce_leggibili
+from app.services.bitmask_tipo import crea_bitmask_tipo, bitmask_tipo_a_lista, bitmask_tipo_a_stringa_leggibile
 from app.services.conversione_livello import ottieni_livello_playtomic
 from app.services.whatsapp import (
     genera_otp, invia_otp_whatsapp, invia_riepilogo_richiesta,
@@ -425,6 +426,52 @@ def inizializza_database_se_necessario():
         ))
         connessione.execute(text(
             "ALTER TABLE utenti ADD COLUMN IF NOT EXISTS provincia VARCHAR(10)"
+        ))
+        connessione.commit()
+
+        # --- Migrazione tipo_partita: da valore singolo a bitmask (punto 21) ---
+        # Permette di accettare più di un tipo partita (es. "MASCHILE o
+        # MISTA"), stesso principio già usato per le fasce orarie.
+        connessione.execute(text(
+            "ALTER TABLE richieste ADD COLUMN IF NOT EXISTS tipi_partita_bitmask INTEGER"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE bozze_richieste_vocali ADD COLUMN IF NOT EXISTS tipi_partita_bitmask INTEGER"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE gruppi ADD COLUMN IF NOT EXISTS tipo_partita VARCHAR(15)"
+        ))
+        connessione.commit()
+
+        # Se la vecchia colonna "tipo_partita" (testo singolo) esiste ancora,
+        # convertiamo i dati già presenti nel nuovo formato, poi la eliminiamo
+        # (se il codice non la scrive più ma resta NOT NULL, ogni nuovo
+        # inserimento fallirebbe).
+        for tabella in ("richieste", "bozze_richieste_vocali"):
+            colonna_vecchia_esiste = connessione.execute(text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = :tabella AND column_name = 'tipo_partita'"
+            ), {"tabella": tabella}).first()
+
+            if colonna_vecchia_esiste:
+                connessione.execute(text(f"""
+                    UPDATE {tabella} SET tipi_partita_bitmask = CASE tipo_partita
+                        WHEN 'MASCHILE' THEN 1
+                        WHEN 'FEMMINILE' THEN 2
+                        WHEN 'MISTA' THEN 4
+                        ELSE 1
+                    END
+                    WHERE tipi_partita_bitmask IS NULL
+                """))
+                connessione.execute(text(f"ALTER TABLE {tabella} DROP COLUMN tipo_partita"))
+                connessione.commit()
+                print(f"[MIGRAZIONE] {tabella}.tipo_partita convertita in tipi_partita_bitmask.")
+
+        connessione.execute(text(
+            "ALTER TABLE richieste ALTER COLUMN tipi_partita_bitmask SET NOT NULL"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE bozze_richieste_vocali ALTER COLUMN tipi_partita_bitmask SET NOT NULL"
         ))
         connessione.commit()
 
@@ -1335,7 +1382,7 @@ def profilo_utente(whatsapp_numero: str, db: Session = Depends(get_db)):
         "livello_dichiarato_originale": utente.livello_dichiarato_originale,
         "lato_preferito": utente.lato_preferito,
         "ultima_richiesta": {
-            "tipo_partita": ultima_richiesta.tipo_partita,
+            "tipi_partita": bitmask_tipo_a_lista(ultima_richiesta.tipi_partita_bitmask),
             "circoli_ids": [c.id for c in ultima_richiesta.circoli],
         } if ultima_richiesta else None,
     }
@@ -1468,7 +1515,7 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
 
     richiesta = models.Richiesta(
         utente_id=utente.id,
-        tipo_partita=dati.tipo_partita,
+        tipi_partita_bitmask=crea_bitmask_tipo(dati.tipi_partita),
         giorno=dati.giorno,
         disponibilita_bitmask=bitmask,
         stato="IN_RICERCA",
@@ -1507,12 +1554,13 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
 
     else:
         fasce_leggibili = ", ".join(bitmask_a_fasce_leggibili(bitmask))
+        tipo_partita_leggibile = bitmask_tipo_a_stringa_leggibile(crea_bitmask_tipo(dati.tipi_partita))
         lato_leggibile = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}.get(
             utente.lato_preferito, utente.lato_preferito
         )
         riepilogo = (
             f"Ciao {utente.nome}, ho registrato la tua richiesta!\n"
-            f"{dati.tipo_partita} - {dati.giorno}\n"
+            f"{tipo_partita_leggibile} - {dati.giorno}\n"
             f"Orari: {fasce_leggibili}\n"
             f"Livello: {utente.livello_playtomic}\n"
             f"Lato: {lato_leggibile}\n"
@@ -1524,7 +1572,7 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
         )
         riepilogo_inviato_davvero = invia_riepilogo_richiesta(
             utente.whatsapp_numero, riepilogo,
-            nome=utente.nome, tipo_partita=dati.tipo_partita, giorno=str(dati.giorno),
+            nome=utente.nome, tipo_partita=tipo_partita_leggibile, giorno=str(dati.giorno),
             orari=fasce_leggibili, livello=str(utente.livello_playtomic),
             lato=lato_leggibile, circoli=', '.join(c.nome for c in circoli),
         )
@@ -1585,12 +1633,13 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
     )
     if ultima_richiesta is not None:
         fasce_leggibili = ", ".join(bitmask_a_fasce_leggibili(ultima_richiesta.disponibilita_bitmask))
+        tipo_partita_leggibile = bitmask_tipo_a_stringa_leggibile(ultima_richiesta.tipi_partita_bitmask)
         lato_leggibile = {"DX": "Destra", "SX": "Sinistra", "INDIFFERENTE": "Indifferente"}.get(
             utente.lato_preferito, utente.lato_preferito
         )
         riepilogo = (
             f"Perfetto {utente.nome}, numero verificato! Ecco il riepilogo della tua richiesta:\n"
-            f"{ultima_richiesta.tipo_partita} - {ultima_richiesta.giorno}\n"
+            f"{tipo_partita_leggibile} - {ultima_richiesta.giorno}\n"
             f"Orari: {fasce_leggibili}\n"
             f"Livello: {utente.livello_playtomic}\n"
             f"Lato: {lato_leggibile}\n"
@@ -1602,7 +1651,7 @@ def valida_otp(dati: schemas.ValidaOtpRequest, db: Session = Depends(get_db)):
         )
         invia_riepilogo_richiesta(
             utente.whatsapp_numero, riepilogo,
-            nome=utente.nome, tipo_partita=ultima_richiesta.tipo_partita, giorno=str(ultima_richiesta.giorno),
+            nome=utente.nome, tipo_partita=tipo_partita_leggibile, giorno=str(ultima_richiesta.giorno),
             orari=fasce_leggibili, livello=str(utente.livello_playtomic),
             lato=lato_leggibile, circoli=', '.join(c.nome for c in ultima_richiesta.circoli),
         )
@@ -2600,7 +2649,6 @@ def _conta_persone_compatibili(db: Session, richiesta: models.Richiesta) -> int:
             models.Richiesta.utente_id != richiesta.utente_id,
             models.Richiesta.stato == "IN_RICERCA",
             models.Richiesta.giorno == richiesta.giorno,
-            models.Richiesta.tipo_partita == richiesta.tipo_partita,
         )
         .all()
     )
@@ -2608,6 +2656,8 @@ def _conta_persone_compatibili(db: Session, richiesta: models.Richiesta) -> int:
     circoli_richiesta = set(c.id for c in richiesta.circoli)
     conteggio = 0
     for altra in altre_richieste:
+        if not (altra.tipi_partita_bitmask & richiesta.tipi_partita_bitmask):
+            continue
         if not (altra.disponibilita_bitmask & richiesta.disponibilita_bitmask):
             continue
         if not (set(c.id for c in altra.circoli) & circoli_richiesta):
@@ -2665,7 +2715,7 @@ def stato_richieste_utente(numero_whatsapp: str, db: Session = Depends(get_db)):
             "id": r.id,
             "giorno": str(r.giorno),
             "fasce_orarie": ", ".join(bitmask_a_fasce_leggibili(r.disponibilita_bitmask)),
-            "tipo_partita": r.tipo_partita,
+            "tipo_partita": bitmask_tipo_a_stringa_leggibile(r.tipi_partita_bitmask),
             "persone_compatibili": conteggio,
             "probabilita": _probabilita_da_conteggio(conteggio),
         })

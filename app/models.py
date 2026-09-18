@@ -73,7 +73,7 @@ class Richiesta(Base):
     id = Column(Integer, primary_key=True)
     utente_id = Column(Integer, ForeignKey("utenti.id"), nullable=False)
 
-    tipo_partita = Column(String(15), nullable=False)  # MASCHILE, FEMMINILE, MISTA
+    tipi_partita_bitmask = Column(Integer, nullable=False)  # MASCHILE=1, FEMMINILE=2, MISTA=4 (combinabili)
     giorno = Column(Date, nullable=False)
     disponibilita_bitmask = Column(BigInteger, nullable=False)  # 32 bit, slot da 30 min
 
@@ -108,7 +108,7 @@ class BozzaRichiestaVocale(Base):
 
     giorno = Column(Date, nullable=False)
     disponibilita_bitmask = Column(BigInteger, nullable=False)
-    tipo_partita = Column(String(15), nullable=False)
+    tipi_partita_bitmask = Column(Integer, nullable=False)
     circoli_ids_csv = Column(String(200), nullable=False)  # es. "1,4,7"
 
     creata_il = Column(DateTime, server_default=func.now())
@@ -120,6 +120,7 @@ class Gruppo(Base):
     id = Column(Integer, primary_key=True)
     circolo_id = Column(Integer, ForeignKey("circoli.id"))
     giorno = Column(Date, nullable=False)
+    tipo_partita = Column(String(15), nullable=True)  # MASCHILE/FEMMINILE/MISTA - scelto tra quelli in comune ai 4
     slot_inizio = Column(Integer, nullable=False)    # indice slot bitmask (0-31)
     durata_slot = Column(Integer, nullable=False)     # es. 3 = 1h30
 
