@@ -12,7 +12,7 @@ import os
 import csv
 import io
 
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
@@ -4257,3 +4257,95 @@ def invia_template_demo(dati: dict):
     if not successo:
         raise HTTPException(status_code=502, detail=f"Invio fallito: {errore}")
     return {"ok": True, "messaggio": f"Messaggio demo inviato a {numero}."}
+
+
+# === INVIO MASSIVO: un template marketing a una lista di numeri caricata ===
+def _esegui_invio_massivo(campagna_id: int, numeri: list[str]):
+    from time import sleep
+    db = SessionLocal()
+    try:
+        campagna = db.query(models.InvioMassivo).filter(models.InvioMassivo.id == campagna_id).first()
+        if campagna is None:
+            return
+        righe_fallite = []
+        for numero in numeri:
+            successo, errore = invia_template_grezzo_per_demo(numero, campagna.content_sid_usato, {})
+            if successo:
+                campagna.numero_inviati += 1
+            else:
+                campagna.numero_falliti += 1
+                righe_fallite.append(f"{numero}: {errore}")
+            db.commit()
+            sleep(1)
+        campagna.stato = "COMPLETATO"
+        campagna.dettagli_falliti = "\n".join(righe_fallite) if righe_fallite else None
+        db.commit()
+    finally:
+        db.close()
+
+
+@app.post("/admin/invio-massivo", dependencies=[Depends(verifica_credenziali_admin)])
+async def crea_invio_massivo(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    if not config.TEMPLATE_INVIO_MASSIVO:
+        raise HTTPException(status_code=400, detail="TEMPLATE_INVIO_MASSIVO non e' ancora configurato su Railway.")
+
+    contenuto_grezzo = (await file.read()).decode("utf-8", errors="ignore")
+    righe = [r.strip() for r in contenuto_grezzo.splitlines() if r.strip()]
+
+    numeri_normalizzati = []
+    for riga in righe:
+        numero = riga.strip()
+        if not numero.startswith("+"):
+            numero = "+" + numero.lstrip("0")
+        numeri_normalizzati.append(numero)
+
+    numeri_unici = list(dict.fromkeys(numeri_normalizzati))
+
+    if not numeri_unici:
+        raise HTTPException(status_code=400, detail="Il file non contiene nessun numero valido.")
+
+    db = SessionLocal()
+    try:
+        campagna = models.InvioMassivo(
+            nome_file=file.filename,
+            content_sid_usato=config.TEMPLATE_INVIO_MASSIVO,
+            numero_totale=len(numeri_unici),
+        )
+        db.add(campagna)
+        db.commit()
+        db.refresh(campagna)
+        campagna_id = campagna.id
+    finally:
+        db.close()
+
+    background_tasks.add_task(_esegui_invio_massivo, campagna_id, numeri_unici)
+    return {"campagna_id": campagna_id, "numero_totale": len(numeri_unici)}
+
+
+@app.get("/admin/invio-massivo/{campagna_id}", dependencies=[Depends(verifica_credenziali_admin)])
+def stato_invio_massivo(campagna_id: int, db: Session = Depends(get_db)):
+    campagna = db.query(models.InvioMassivo).filter(models.InvioMassivo.id == campagna_id).first()
+    if campagna is None:
+        raise HTTPException(status_code=404, detail="Campagna non trovata.")
+    return {
+        "id": campagna.id, "stato": campagna.stato, "numero_totale": campagna.numero_totale,
+        "numero_inviati": campagna.numero_inviati, "numero_falliti": campagna.numero_falliti,
+        "dettagli_falliti": campagna.dettagli_falliti,
+    }
+
+
+@app.get("/admin/invii-massivi", dependencies=[Depends(verifica_credenziali_admin)])
+def lista_invii_massivi(db: Session = Depends(get_db)):
+    campagne = db.query(models.InvioMassivo).order_by(models.InvioMassivo.id.desc()).limit(20).all()
+    return [{
+        "id": c.id, "data_creazione": str(c.data_creazione), "nome_file": c.nome_file,
+        "stato": c.stato, "numero_totale": c.numero_totale,
+        "numero_inviati": c.numero_inviati, "numero_falliti": c.numero_falliti,
+    } for c in campagne]
+
+
+@app.get("/admin/invio-massivo-pagina", dependencies=[Depends(verifica_credenziali_admin)])
+def pagina_admin_invio_massivo():
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "invio_massivo.html")
+    return FileResponse(percorso)

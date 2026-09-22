@@ -223,3 +223,25 @@ class MessaggioContatto(Base):
     messaggio = Column(String(2000), nullable=False)
     email_inviata_con_successo = Column(Boolean, default=False)
     data_invio = Column(DateTime, server_default=func.now())
+
+
+class InvioMassivo(Base):
+    """
+    Traccia una campagna di invio massivo (es. promozione a soci di un
+    circolo che ha dato il permesso) - un file di numeri caricato una
+    tantum dal pannello, un template marketing mandato a tutti. Il
+    risultato resta qui in modo permanente (a differenza del file
+    caricato, che non viene mai salvato su disco: Railway lo azzera a
+    ogni deploy, quindi l'unico posto affidabile è il database).
+    """
+    __tablename__ = "invii_massivi"
+
+    id = Column(Integer, primary_key=True)
+    data_creazione = Column(DateTime, server_default=func.now())
+    nome_file = Column(String(255), nullable=True)
+    content_sid_usato = Column(String(50), nullable=False)
+    stato = Column(String(20), default="IN_CORSO")  # IN_CORSO, COMPLETATO
+    numero_totale = Column(Integer, default=0)
+    numero_inviati = Column(Integer, default=0)
+    numero_falliti = Column(Integer, default=0)
+    dettagli_falliti = Column(String, nullable=True)  # un numero+errore per riga
