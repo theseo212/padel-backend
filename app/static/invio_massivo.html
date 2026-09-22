@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Invio Massivo — Pannello AnnaPadel</title>
+<style>
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f4f5f7;
+        margin: 0;
+        padding: 24px;
+        color: #1a1a1a;
+    }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    h2 { font-size: 17px; margin-top: 24px; color: #333; }
+    p.sottotitolo { color: #666; margin-top: 0; font-size: 14px; }
+    nav.menu-admin {
+        display: flex; gap: 8px; margin: 16px 0 20px; flex-wrap: wrap;
+    }
+    nav.menu-admin a {
+        text-decoration: none; color: #444; background: white;
+        padding: 8px 14px; border-radius: 8px; font-size: 14px;
+        font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    nav.menu-admin a.attivo { background: #2563eb; color: white; }
+
+    .scatola {
+        background: white; border-radius: 10px; padding: 20px;
+        max-width: 560px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-bottom: 20px;
+    }
+    .avviso {
+        background: #fff7e6; border: 1px solid #f3d98b; border-radius: 8px;
+        padding: 14px; font-size: 13px; color: #7a5c00; margin-bottom: 16px;
+    }
+    input[type="file"] { margin: 10px 0; font-size: 14px; }
+    button {
+        padding: 11px 18px; border: none; border-radius: 8px;
+        background: #7CB342; color: white; font-size: 14px; font-weight: 600;
+        cursor: pointer;
+    }
+    button:disabled { background: #b8d99b; cursor: not-allowed; }
+
+    .barra-progresso {
+        width: 100%; height: 22px; background: #eee; border-radius: 11px;
+        overflow: hidden; margin: 14px 0 6px;
+    }
+    .barra-progresso-riempimento {
+        height: 100%; background: #7CB342; transition: width 0.3s;
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-size: 12px; font-weight: 600;
+    }
+    .riepilogo-numeri { font-size: 14px; color: #444; margin-top: 8px; }
+    .riepilogo-numeri strong { color: #1a7a3a; }
+    .riepilogo-numeri .falliti { color: #a3231f; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #f0f0f0; }
+    .stato-completato { color: #1a7a3a; font-weight: 600; }
+    .stato-in-corso { color: #b8860b; font-weight: 600; }
+
+    .dettagli-falliti {
+        margin-top: 10px; font-size: 12px; color: #a3231f;
+        white-space: pre-wrap; max-height: 150px; overflow-y: auto;
+        background: #fbdcdc; padding: 10px; border-radius: 6px;
+    }
+</style>
+</head>
+<body>
+
+<h1>🎾 Pannello Operatore</h1>
+<p class="sottotitolo">Gestione prenotazioni campi e partite giocate — AnnaPadel</p>
+
+<nav class="menu-admin">
+    <a href="/admin">Gruppi in attesa</a>
+    <a href="/admin/contatti">Messaggi dal form</a>
+    <a href="/admin/circoli">Gestione Circoli</a>
+    <a href="/admin/report">Report Partite</a>
+    <a href="/admin/database">Database</a>
+    <a href="/admin/demo-template">Demo Template</a>
+    <a href="/admin/statistiche">Statistiche</a>
+    <a href="/admin/invio-massivo-pagina" class="attivo">Invio Massivo</a>
+</nav>
+
+<h2>Invio massivo (campagna promozionale)</h2>
+
+<div class="avviso">
+    ⚠️ Usa questo strumento <strong>solo</strong> con numeri che hanno dato il permesso di
+    ricevere messaggi promozionali (es. soci di un circolo che ha autorizzato l'invio).
+    Il template usato deve essere di categoria <strong>Marketing</strong>, già approvato da Meta.
+</div>
+
+<div class="scatola">
+    <label for="file-numeri"><strong>File di testo con i numeri</strong> (uno per riga, con o senza il +)</label>
+    <br>
+    <input type="file" id="file-numeri" accept=".txt">
+    <br>
+    <button id="bottone-invia" onclick="avviaInvio()">Avvia invio</button>
+    <div id="esito-avvio"></div>
+</div>
+
+<div class="scatola" id="scatola-progresso" style="display:none;">
+    <strong>Campagna in corso</strong>
+    <div class="barra-progresso">
+        <div class="barra-progresso-riempimento" id="barra-riempimento" style="width:0%;">0%</div>
+    </div>
+    <div class="riepilogo-numeri" id="riepilogo-numeri"></div>
+    <div class="dettagli-falliti" id="dettagli-falliti" style="display:none;"></div>
+</div>
+
+<h2>Campagne precedenti</h2>
+<div class="scatola" style="max-width:900px;">
+    <table id="tabella-storico">
+        <tr><th>Data</th><th>File</th><th>Stato</th><th>Totale</th><th>Inviati</th><th>Falliti</th></tr>
+    </table>
+</div>
+
+<script>
+let campagnaIntervalId = null;
+
+async function avviaInvio() {
+    const input = document.getElementById('file-numeri');
+    const esitoDiv = document.getElementById('esito-avvio');
+    esitoDiv.innerHTML = '';
+
+    if (!input.files || input.files.length === 0) {
+        esitoDiv.innerHTML = '<p style="color:#a3231f;">Scegli prima un file.</p>';
+        return;
+    }
+
+    const bottone = document.getElementById('bottone-invia');
+    bottone.disabled = true;
+    bottone.textContent = 'Avvio in corso…';
+
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+
+    try {
+        const risposta = await fetch('/admin/invio-massivo', { method: 'POST', body: formData });
+        const dati = await risposta.json();
+
+        if (!risposta.ok) {
+            esitoDiv.innerHTML = `<p style="color:#a3231f;">${dati.detail || 'Errore avvio invio.'}</p>`;
+            bottone.disabled = false;
+            bottone.textContent = 'Avvia invio';
+            return;
+        }
+
+        esitoDiv.innerHTML = `<p style="color:#1a7a3a;">Avviato: ${dati.numero_totale} numeri in coda.</p>`;
+        document.getElementById('scatola-progresso').style.display = 'block';
+        monitoraCampagna(dati.campagna_id);
+    } catch (e) {
+        esitoDiv.innerHTML = `<p style="color:#a3231f;">Impossibile contattare il server: ${e.message}</p>`;
+        bottone.disabled = false;
+        bottone.textContent = 'Avvia invio';
+    }
+}
+
+function monitoraCampagna(id) {
+    if (campagnaIntervalId) clearInterval(campagnaIntervalId);
+
+    async function aggiorna() {
+        const risposta = await fetch(`/admin/invio-massivo/${id}`);
+        const c = await risposta.json();
+
+        const percentuale = c.numero_totale > 0
+            ? Math.round(((c.numero_inviati + c.numero_falliti) / c.numero_totale) * 100)
+            : 0;
+        const barra = document.getElementById('barra-riempimento');
+        barra.style.width = percentuale + '%';
+        barra.textContent = percentuale + '%';
+
+        document.getElementById('riepilogo-numeri').innerHTML =
+            `<strong>${c.numero_inviati}</strong> inviati, ` +
+            `<span class="falliti">${c.numero_falliti}</span> falliti, su ${c.numero_totale} totali — ` +
+            `stato: ${c.stato === 'COMPLETATO' ? '✅ Completato' : '⏳ In corso'}`;
+
+        if (c.dettagli_falliti) {
+            const dettagliDiv = document.getElementById('dettagli-falliti');
+            dettagliDiv.style.display = 'block';
+            dettagliDiv.textContent = c.dettagli_falliti;
+        }
+
+        if (c.stato === 'COMPLETATO') {
+            clearInterval(campagnaIntervalId);
+            document.getElementById('bottone-invia').disabled = false;
+            document.getElementById('bottone-invia').textContent = 'Avvia invio';
+            caricaStorico();
+        }
+    }
+
+    aggiorna();
+    campagnaIntervalId = setInterval(aggiorna, 2000);
+}
+
+async function caricaStorico() {
+    const risposta = await fetch('/admin/invii-massivi');
+    const campagne = await risposta.json();
+    const tabella = document.getElementById('tabella-storico');
+
+    let html = '<tr><th>Data</th><th>File</th><th>Stato</th><th>Totale</th><th>Inviati</th><th>Falliti</th></tr>';
+    for (const c of campagne) {
+        const classeStato = c.stato === 'COMPLETATO' ? 'stato-completato' : 'stato-in-corso';
+        html += `<tr>
+            <td>${c.data_creazione.split('.')[0]}</td>
+            <td>${c.nome_file || '-'}</td>
+            <td class="${classeStato}">${c.stato}</td>
+            <td>${c.numero_totale}</td>
+            <td>${c.numero_inviati}</td>
+            <td>${c.numero_falliti}</td>
+        </tr>`;
+    }
+    tabella.innerHTML = html;
+}
+
+caricaStorico();
+</script>
+
+</body>
+</html>
