@@ -27,6 +27,7 @@ from app.config import (
     TEMPLATE_SOSPENSIONE, TEMPLATE_PROMEMORIA_MANCATA_PARTITA,
     TEMPLATE_RICHIESTA_PRENOTAZIONE_CIRCOLO, TEMPLATE_RICHIESTA_SCADUTA, TEMPLATE_CONFERMA_BOZZA_VOCALE,
     TEMPLATE_MODIFICA_PREFERENZE_VOCALE, TEMPLATE_AVVISO_MESSAGGIO_NON_GESTITO,
+    TEMPLATE_RICHIESTA_CONFERMA_COMPAGNO, TEMPLATE_ESITO_RICHIESTA_COPPIA,
 )
 
 _TWILIO_CONFIGURATO = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_NUMBER)
@@ -280,6 +281,39 @@ def invia_link_modifica_preferenze_vocale(numero_whatsapp: str, giorno: str = ""
     variabili = {"1": giorno} if giorno else {}
     _invia(numero_whatsapp, f"Per la tua richiesta del {giorno}, se vuoi cambiare tipo partita, lato o circoli:",
            TEMPLATE_MODIFICA_PREFERENZE_VOCALE, variabili)
+
+
+def invia_richiesta_conferma_compagno(numero_whatsapp: str, testo: str, nome_richiedente: str = "",
+                                         giorno: str = "", fascia_oraria: str = "", circoli: str = "") -> bool:
+    """
+    Manda al COMPAGNO (B) la richiesta di conferma per giocare in coppia
+    con chi ha compilato il form (A) - punto 22. Messaggio "avviato da
+    noi" (B non ha scritto nulla prima), serve un template approvato con
+    due bottoni Conferma/Rifiuta.
+    """
+    variabili = {
+        "1": nome_richiedente, "2": giorno, "3": fascia_oraria, "4": circoli,
+    } if nome_richiedente else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_RICHIESTA_CONFERMA_COMPAGNO, variabili,
+                  etichetta_simulazione=" - RICHIESTA CONFERMA COMPAGNO con bottoni Conferma/Rifiuta")
+
+
+def invia_esito_richiesta_coppia(numero_whatsapp: str, testo: str, nome_compagno: str = "",
+                                    giorno: str = "", fascia_oraria: str = "", circoli: str = "",
+                                    esito: str = "") -> bool:
+    """
+    Avvisa A (che aveva indicato il compagno) dell'esito - confermato o
+    rifiutato. A non ha scritto nulla di recente (l'ultima sua azione è
+    stata compilare il form sul sito), quindi serve un template. Stessa
+    struttura di variabili per entrambi gli esiti (cambia solo il testo di
+    'esito'), così un solo template copre entrambi i casi.
+    """
+    variabili = {
+        "1": nome_compagno, "2": giorno, "3": fascia_oraria, "4": circoli, "5": esito,
+    } if nome_compagno else None
+    return _invia(numero_whatsapp, testo, TEMPLATE_ESITO_RICHIESTA_COPPIA, variabili,
+                  etichetta_simulazione=" - ESITO RICHIESTA COPPIA")
+
 
 
 def invia_richiesta_scaduta(numero_whatsapp: str, testo: str, tipo_partita: str = "",
