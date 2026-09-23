@@ -33,6 +33,13 @@ class RichiestaCreate(BaseModel):
     )
     circoli_ids: list[int] = Field(..., min_length=1)
 
+    # Punto 22: "gioco già in coppia" - opzionale. Se valorizzato, la
+    # richiesta resta in attesa della conferma del compagno (che deve
+    # essere già un utente verificato) prima di entrare nel matching.
+    numero_compagno: str | None = Field(
+        default=None, description="Numero WhatsApp del compagno già verificato, formato internazionale"
+    )
+
 
 class RichiestaResponse(BaseModel):
     richiesta_id: int

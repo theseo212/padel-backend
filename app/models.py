@@ -46,7 +46,7 @@ class Utente(Base):
 
     # relazioni: permettono di navigare facilmente da un utente
     # alle sue richieste, senza scrivere query manuali ogni volta
-    richieste = relationship("Richiesta", back_populates="utente")
+    richieste = relationship("Richiesta", back_populates="utente", foreign_keys="Richiesta.utente_id")
 
 
 class Circolo(Base):
@@ -77,14 +77,25 @@ class Richiesta(Base):
     giorno = Column(Date, nullable=False)
     disponibilita_bitmask = Column(BigInteger, nullable=False)  # 32 bit, slot da 30 min
 
-    stato = Column(String(20), default="IN_RICERCA")
-    # IN_RICERCA, LOCKED, CONFERMATA, SCADUTA, ANNULLATA
+    stato = Column(String(30), default="IN_RICERCA")
+    # IN_RICERCA, LOCKED, CONFERMATA, SCADUTA, ANNULLATA, ATTESA_CONFERMA_COMPAGNO
+
+    # Gestione "gioco già in coppia" (punto 22): se A indica un compagno già
+    # verificato, la richiesta di A resta in ATTESA_CONFERMA_COMPAGNO finché
+    # B non conferma su WhatsApp. utente_compagno_atteso_id identifica CHI
+    # deve confermare (usato solo durante l'attesa); una volta confermato,
+    # richiesta_partner_id collega le due richieste (reciprocamente), e il
+    # motore le tratterà sempre come un'unica unità inseparabile - ma SOLO
+    # per questa specifica richiesta/giorno, mai come vincolo permanente
+    # tra i due utenti.
+    utente_compagno_atteso_id = Column(Integer, ForeignKey("utenti.id"), nullable=True)
+    richiesta_partner_id = Column(Integer, ForeignKey("richieste.id"), nullable=True)
 
     data_creazione = Column(DateTime, server_default=func.now())
     tolleranza_corrente = Column(Numeric(3, 2), default=0.5)
     promemoria_mancata_partita_inviato = Column(Boolean, default=False)
 
-    utente = relationship("Utente", back_populates="richieste")
+    utente = relationship("Utente", back_populates="richieste", foreign_keys=[utente_id])
     circoli = relationship("Circolo", secondary="richieste_circoli")
 
 

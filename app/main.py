@@ -30,11 +30,12 @@ from app.services.conversione_livello import ottieni_livello_playtomic
 from app.services.whatsapp import (
     genera_otp, invia_otp_whatsapp, invia_riepilogo_richiesta,
     invia_messaggio_non_riconosciuto, invia_avviso_messaggio_non_gestito_operatore,
-    invia_template_grezzo_per_demo,
+    invia_template_grezzo_per_demo, invia_richiesta_conferma_compagno,
 )
 from app.services.email_service import invia_email_contatto
 from app.matching.motore import esegui_ciclo_matching
 from app.matching.gestione_gruppi import rispondi_a_gruppo, controlla_timeout_gruppi, rispondi_a_gruppo_da_whatsapp
+from app.matching.gestione_coppie import rispondi_a_richiesta_coppia_da_whatsapp
 from app.matching.richiesta_vocale import (
     gestisci_richiesta_vocale, gestisci_conferma_bozza_vocale, controlla_bozze_vocali_scadute,
 )
@@ -583,6 +584,22 @@ def inizializza_database_se_necessario():
         ))
         connessione.execute(text(
             "ALTER TABLE utenti ADD COLUMN IF NOT EXISTS provincia VARCHAR(10)"
+        ))
+        connessione.commit()
+
+        # --- Migrazione "gioco già in coppia" (punto 22) ---
+        connessione.execute(text(
+            "ALTER TABLE richieste ADD COLUMN IF NOT EXISTS utente_compagno_atteso_id INTEGER "
+            "REFERENCES utenti(id)"
+        ))
+        connessione.execute(text(
+            "ALTER TABLE richieste ADD COLUMN IF NOT EXISTS richiesta_partner_id INTEGER "
+            "REFERENCES richieste(id)"
+        ))
+        # "ATTESA_CONFERMA_COMPAGNO" (24 caratteri) supera il vecchio limite
+        # di 20 - allarghiamo la colonna anche sui database già esistenti.
+        connessione.execute(text(
+            "ALTER TABLE richieste ALTER COLUMN stato TYPE VARCHAR(30)"
         ))
         connessione.commit()
 
@@ -2276,6 +2293,43 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
                 }
             )
 
+    # --- Punto 22: "gioco già in coppia" - validazione del compagno, se indicato ---
+    compagno = None
+    if dati.numero_compagno:
+        if utente_nuovo or not utente.whatsapp_validato:
+            raise HTTPException(
+                status_code=400,
+                detail="Per indicare un compagno di gioco devi prima essere tu stesso un utente verificato "
+                       "(completa almeno una richiesta normale, con conferma OTP)."
+            )
+        if dati.numero_compagno == dati.whatsapp_numero:
+            raise HTTPException(status_code=400, detail="Non puoi indicare te stesso come compagno di gioco.")
+
+        compagno = db.query(models.Utente).filter(
+            models.Utente.whatsapp_numero == dati.numero_compagno
+        ).first()
+        if compagno is None or not compagno.whatsapp_validato:
+            raise HTTPException(
+                status_code=400,
+                detail="Il tuo compagno deve aver già usato AnnaPadel almeno una volta "
+                       "(numero WhatsApp verificato) prima di poter essere invitato."
+            )
+
+        richiesta_compagno_attiva = (
+            db.query(models.Richiesta)
+            .filter(
+                models.Richiesta.utente_id == compagno.id,
+                models.Richiesta.giorno == dati.giorno,
+                models.Richiesta.stato.in_(["IN_RICERCA", "LOCKED", "ATTESA_CONFERMA_COMPAGNO"]),
+            )
+            .first()
+        )
+        if richiesta_compagno_attiva is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Il tuo compagno ha già una richiesta attiva per questo giorno."
+            )
+
     if utente_nuovo:
         # Prima richiesta in assoluto: calcoliamo e "congeliamo" il livello
         try:
@@ -2353,12 +2407,38 @@ def crea_richiesta(dati: schemas.RichiestaCreate, db: Session = Depends(get_db))
         tipi_partita_bitmask=crea_bitmask_tipo(dati.tipi_partita),
         giorno=dati.giorno,
         disponibilita_bitmask=bitmask,
-        stato="IN_RICERCA",
+        stato="ATTESA_CONFERMA_COMPAGNO" if compagno else "IN_RICERCA",
+        utente_compagno_atteso_id=compagno.id if compagno else None,
         tolleranza_corrente=config.TOLLERANZA_INIZIALE,
     )
     richiesta.circoli = circoli
     db.add(richiesta)
     db.flush()
+
+    # --- Punto 22: se è stato indicato un compagno, la richiesta resta in
+    # attesa della SUA conferma - saltiamo del tutto sia il flusso OTP che
+    # quello del riepilogo normale (sappiamo già che utente è verificato,
+    # per via del controllo fatto sopra).
+    if compagno:
+        fasce_leggibili = ", ".join(bitmask_a_fasce_leggibili(bitmask))
+        nomi_circoli = ", ".join(c.nome for c in circoli)
+
+        testo_richiesta_conferma = (
+            f"{utente.nome} vuole giocare in coppia con te il {dati.giorno} "
+            f"({fasce_leggibili}) nei circoli {nomi_circoli} - confermi?"
+        )
+        db.commit()
+        invia_richiesta_conferma_compagno(
+            compagno.whatsapp_numero, testo_richiesta_conferma,
+            nome_richiedente=utente.nome, giorno=str(dati.giorno),
+            fascia_oraria=fasce_leggibili, circoli=nomi_circoli,
+        )
+        return schemas.RichiestaResponse(
+            richiesta_id=richiesta.id,
+            utente_nuovo=False,
+            richiede_validazione_otp=False,
+            messaggio=f"Richiesta in attesa: ho chiesto conferma a {compagno.nome} su WhatsApp.",
+        )
 
     # --- 4/5. Validazione OTP oppure riepilogo ---
     if not utente.whatsapp_validato:
@@ -2974,32 +3054,35 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
         gestisci_conferma_bozza_vocale(db, numero_mittente, testo_messaggio)
     except ValueError:
         try:
-            rispondi_a_gruppo_da_whatsapp(db, numero_mittente, testo_messaggio)
+            rispondi_a_richiesta_coppia_da_whatsapp(db, numero_mittente, testo_messaggio)
         except ValueError:
-            # Non era una risposta a una proposta di gruppo in corso: proviamo
-            # a interpretarlo come un voto di valutazione livello (Step 04).
             try:
-                rispondi_feedback_da_whatsapp(db, numero_mittente, testo_messaggio)
-            except ValueError as errore:
-                # Nessuno dei casi precedenti: se il messaggio contiene un
-                # audio, proviamo a interpretarlo come richiesta vocale
-                # (miglioramento richiesto da un circolo, solo per utenti
-                # già verificati - la funzione stessa lo ignora altrimenti).
-                num_media = int(dati.get("NumMedia", "0") or "0")
-                tipo_media = dati.get("MediaContentType0", "")
-                indirizzo_media = dati.get("MediaUrl0", "")
-                if num_media > 0 and tipo_media.startswith("audio") and indirizzo_media:
-                    gestisci_richiesta_vocale(db, numero_mittente, indirizzo_media)
-                else:
-                    # Non è un errore del server, es. un messaggio libero
-                    # che non c'entra con nessun flusso previsto ("Ciao
-                    # Anna", una domanda, ecc.) - senza questo, l'utente
-                    # restava nel silenzio, e l'operatore non ne sapeva
-                    # nulla. Rispondiamo comunque 200 a Twilio (altrimenti
-                    # riproverebbe a inviarcelo).
-                    print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
-                    invia_messaggio_non_riconosciuto(numero_mittente)
-                    invia_avviso_messaggio_non_gestito_operatore(numero_mittente, testo_messaggio)
+                rispondi_a_gruppo_da_whatsapp(db, numero_mittente, testo_messaggio)
+            except ValueError:
+                # Non era una risposta a una proposta di gruppo in corso: proviamo
+                # a interpretarlo come un voto di valutazione livello (Step 04).
+                try:
+                    rispondi_feedback_da_whatsapp(db, numero_mittente, testo_messaggio)
+                except ValueError as errore:
+                    # Nessuno dei casi precedenti: se il messaggio contiene un
+                    # audio, proviamo a interpretarlo come richiesta vocale
+                    # (miglioramento richiesto da un circolo, solo per utenti
+                    # già verificati - la funzione stessa lo ignora altrimenti).
+                    num_media = int(dati.get("NumMedia", "0") or "0")
+                    tipo_media = dati.get("MediaContentType0", "")
+                    indirizzo_media = dati.get("MediaUrl0", "")
+                    if num_media > 0 and tipo_media.startswith("audio") and indirizzo_media:
+                        gestisci_richiesta_vocale(db, numero_mittente, indirizzo_media)
+                    else:
+                        # Non è un errore del server, es. un messaggio libero
+                        # che non c'entra con nessun flusso previsto ("Ciao
+                        # Anna", una domanda, ecc.) - senza questo, l'utente
+                        # restava nel silenzio, e l'operatore non ne sapeva
+                        # nulla. Rispondiamo comunque 200 a Twilio (altrimenti
+                        # riproverebbe a inviarcelo).
+                        print(f"[WEBHOOK TWILIO] Messaggio non gestito da {numero_mittente}: {errore}")
+                        invia_messaggio_non_riconosciuto(numero_mittente)
+                        invia_avviso_messaggio_non_gestito_operatore(numero_mittente, testo_messaggio)
 
     return Response(content="<Response></Response>", media_type="application/xml")
 
