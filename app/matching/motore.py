@@ -106,43 +106,103 @@ def calcola_punteggio(gruppo: list, slot_partita: int, circolo, adesso: datetime
     return punteggio
 
 
-def trova_candidati_per_seed(seed, richieste_attive: list) -> list:
+def costruisci_unita(richieste_attive: list) -> list[list]:
     """
-    Primo filtro, economico: stesso giorno, ALMENO UN tipo partita in
-    comune (non più necessariamente lo stesso identico, un utente può
-    accettarne più di uno - punto 21), almeno un circolo in comune,
-    esclude il seed stesso.
+    Raggruppa le richieste attive in "unità di matching" (punto 22): una
+    coppia (2 richieste, collegate da richiesta_partner_id, SEMPRE
+    insieme) oppure una singola (1 richiesta). Il motore, più avanti,
+    ragionerà sempre a unità, mai su singole richieste isolate quando
+    fanno parte di una coppia.
     """
-    candidati = []
-    circoli_seed = set(c.id for c in seed.circoli)
+    unita = []
+    gia_processate = set()
+    per_id = {r.id: r for r in richieste_attive}
 
     for r in richieste_attive:
-        if r.id == seed.id:
+        if r.id in gia_processate:
             continue
-        if r.giorno != seed.giorno:
+        if r.richiesta_partner_id and r.richiesta_partner_id in per_id:
+            partner = per_id[r.richiesta_partner_id]
+            unita.append([r, partner])
+            gia_processate.add(r.id)
+            gia_processate.add(partner.id)
+        else:
+            unita.append([r])
+            gia_processate.add(r.id)
+
+    return unita
+
+
+def trova_unita_candidate(unita_seed: list, tutte_le_unita: list) -> list:
+    """
+    Primo filtro, economico, sulle UNITÀ (non più sulle singole richieste):
+    stesso giorno, ALMENO UN tipo partita in comune, almeno un circolo in
+    comune. Una coppia condivide sempre identico giorno/tipo/circoli tra i
+    suoi due membri (create identiche al momento della conferma), quindi
+    basta controllare il primo rappresentante di ciascuna unità.
+    """
+    rappresentante_seed = unita_seed[0]
+    id_membri_seed = {r.id for r in unita_seed}
+    circoli_seed = set(c.id for c in rappresentante_seed.circoli)
+
+    candidate = []
+    for unita in tutte_le_unita:
+        if {r.id for r in unita} & id_membri_seed:
+            continue  # è la stessa unità del seed
+        rappresentante = unita[0]
+        if rappresentante.giorno != rappresentante_seed.giorno:
             continue
-        if not (r.tipi_partita_bitmask & seed.tipi_partita_bitmask):
+        if not (rappresentante.tipi_partita_bitmask & rappresentante_seed.tipi_partita_bitmask):
             continue
-        if r.stato != "IN_RICERCA":
+        if rappresentante.stato != "IN_RICERCA":
             continue
-        circoli_r = set(c.id for c in r.circoli)
+        circoli_r = set(c.id for c in rappresentante.circoli)
         if not (circoli_seed & circoli_r):
             continue
-        candidati.append(r)
+        candidate.append(unita)
 
-    return candidati
+    return candidate
 
 
-def genera_combinazioni_valide(seed, candidati: list, adesso: datetime, db: Session) -> list:
+def genera_combinazioni_valide(unita_seed: list, unita_candidate: list, adesso: datetime, db: Session) -> list:
     """
-    Prova tutte le combinazioni di 3 candidati (+ seed = gruppo di 4) e
-    restituisce quelle valide, con punteggio, slot orario e circolo scelto.
-    Corrisponde alla funzione GENERA_COMBINAZIONI_VALIDE dello pseudocodice.
+    Combina l'unità seed (1 o 2 persone) con altre unità candidate fino a
+    raggiungere esattamente 4 persone (punto 22): 4 singole, oppure
+    coppia+2 singole, oppure coppia+coppia. Una volta ottenuto il gruppo
+    di 4 richieste "appiattito", i controlli di compatibilità restano
+    ESATTAMENTE gli stessi di prima: si applicano sempre a 4 persone,
+    indipendentemente da come sono raggruppate in unità.
     """
     gruppi_possibili = []
+    posti_rimanenti = 4 - len(unita_seed)  # 3 se il seed è singolo, 2 se è una coppia
 
-    for terna in combinations(candidati, 3):
-        gruppo = [seed] + list(terna)
+    unita_singole = [u for u in unita_candidate if len(u) == 1]
+    unita_coppie = [u for u in unita_candidate if len(u) == 2]
+
+    combinazioni_di_unita = []
+    if posti_rimanenti == 3:
+        # 4 singole in tutto: seed singolo + altre 3 singole
+        for terna in combinations(unita_singole, 3):
+            combinazioni_di_unita.append(list(terna))
+        # coppia + 2 singole, ma la coppia dei 2 rimanenti serve tutta intera:
+        # qui il seed è singolo, quindi una coppia candidata occupa 2 dei 3
+        # posti, lasciandone 1 per un'ultima singola
+        for coppia in unita_coppie:
+            for singola in unita_singole:
+                combinazioni_di_unita.append([coppia, singola])
+    elif posti_rimanenti == 2:
+        # il seed è già una coppia: completano 2 singole, oppure un'altra coppia
+        for due_singole in combinations(unita_singole, 2):
+            combinazioni_di_unita.append(list(due_singole))
+        for coppia in unita_coppie:
+            combinazioni_di_unita.append([coppia])
+
+    for combinazione in combinazioni_di_unita:
+        gruppo = list(unita_seed)
+        for unita in combinazione:
+            gruppo.extend(unita)
+        # Da qui in poi, gruppo è una lista "piatta" di 4 richieste - stessa
+        # identica logica di prima, indifferente a come sono raggruppate.
 
         # controllo più economico per primo (punto 11)
         if not lato_compatibile(gruppo):
@@ -157,8 +217,8 @@ def genera_combinazioni_valide(seed, candidati: list, adesso: datetime, db: Sess
         # membri potrebbero avere in comune un tipo diverso da quello che
         # hanno in comune gli altri due, senza che ce ne sia uno unico
         # condiviso da tutti e 4 insieme - punto 21).
-        intersezione_tipo = seed.tipi_partita_bitmask
-        for r in terna:
+        intersezione_tipo = gruppo[0].tipi_partita_bitmask
+        for r in gruppo[1:]:
             intersezione_tipo &= r.tipi_partita_bitmask
         if not intersezione_tipo:
             continue
@@ -297,18 +357,26 @@ def esegui_ciclo_matching(db: Session):
     # ordiniamo per priorità: chi aspetta di più viene provato come "seed" per primo
     richieste_attive.sort(key=lambda r: r.data_creazione)
 
+    tutte_le_unita = costruisci_unita(richieste_attive)
+    # stessa priorità di prima, applicata all'unità (usando la richiesta più
+    # vecchia al suo interno come riferimento - per una coppia, le due
+    # richieste sono comunque create nello stesso istante)
+    tutte_le_unita.sort(key=lambda u: min(r.data_creazione for r in u))
+
     tutti_i_gruppi_candidati = []
-    utenti_gia_usati_come_seed = set()
+    id_gia_usati_come_seed = set()
 
-    for seed in richieste_attive:
-        if seed.id in utenti_gia_usati_come_seed:
+    for unita_seed in tutte_le_unita:
+        id_membri_seed = {r.id for r in unita_seed}
+        if id_membri_seed & id_gia_usati_come_seed:
             continue
 
-        candidati = trova_candidati_per_seed(seed, richieste_attive)
-        if len(candidati) < 3:
+        unita_candidate = trova_unita_candidate(unita_seed, tutte_le_unita)
+        posti_rimanenti = 4 - len(unita_seed)
+        if sum(len(u) for u in unita_candidate) < posti_rimanenti:
             continue
 
-        gruppi_possibili = genera_combinazioni_valide(seed, candidati, adesso, db)
+        gruppi_possibili = genera_combinazioni_valide(unita_seed, unita_candidate, adesso, db)
         tutti_i_gruppi_candidati.extend(gruppi_possibili)
 
     gruppi_finali = risolvi_conflitti(tutti_i_gruppi_candidati)
