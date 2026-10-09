@@ -101,6 +101,16 @@
     .btn-verde { background: #d5f2df; color: #1a7a3a; }
     .btn-rosso { background: #fbdcdc; color: #a3231f; }
     .btn-secondario { background: #f0f2f5; color: #333; }
+    .btn-aggiungi { background: #2563eb; color: white; padding: 8px 14px; font-size: 13px; margin-bottom: 8px; }
+    .box-aggiungi { background: white; border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .box-aggiungi h3 { margin: 0 0 12px; font-size: 15px; }
+    .griglia-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .griglia-form label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
+    .box-aggiungi input[type="text"], .box-aggiungi select { width: 100%; box-sizing: border-box; padding: 7px 8px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; }
+    .campionati-form { font-size: 13px; margin-bottom: 10px; }
+    .campionati-form label { display: inline-block; margin: 4px 14px 4px 0; }
+    .riga-check { display: block; font-size: 13px; margin-bottom: 6px; }
+    .nota-form { font-size: 12px; color: #888; margin: 4px 0 12px; }
 </style>
 </head>
 <body>
@@ -121,6 +131,34 @@
 </div>
 
 <div id="selettore-tabelle" class="selettore-tabelle"></div>
+<div id="barra-aggiungi"></div>
+<div id="form-aggiungi-utente" class="box-aggiungi" style="display:none">
+    <h3>Aggiungi utente</h3>
+    <div class="griglia-form">
+        <label>Nome<input type="text" id="nu-nome"></label>
+        <label>Cognome<input type="text" id="nu-cognome"></label>
+        <label>Numero WhatsApp<input type="text" id="nu-numero" placeholder="+39 333 1234567"></label>
+        <label>Scala livello
+            <select id="nu-scala" onchange="aggiornaOpzioniLivello()">
+                <option value="PLAYTOMIC">Playtomic</option>
+                <option value="WANSPORT">Wansport</option>
+            </select>
+        </label>
+        <label>Livello<select id="nu-livello"></select></label>
+        <label>Lato preferito
+            <select id="nu-lato">
+                <option value="INDIFFERENTE">Indifferente</option>
+                <option value="DX">Destra</option>
+                <option value="SX">Sinistra</option>
+            </select>
+        </label>
+    </div>
+    <div class="campionati-form"><strong>Campionati</strong> <span id="nu-campionati">Caricamento…</span></div>
+    <label class="riga-check"><input type="checkbox" id="nu-validato"> Segna il numero come già verificato (salta l'OTP)</label>
+    <p class="nota-form">Termini e privacy risulteranno non accettati finché la persona non li accetta dal form pubblico.</p>
+    <button class="btn-verde" onclick="salvaNuovoUtente()">Salva utente</button>
+    <button class="btn-secondario" onclick="chiudiFormUtente()">Annulla</button>
+</div>
 <div id="contatore-righe" class="sottotitolo"></div>
 <div class="contenitore-scroll">
     <div id="contenitore-tabella-db"></div>
@@ -153,6 +191,9 @@ async function selezionaTabella(nome) {
     document.querySelectorAll('.btn-tabella').forEach(b => b.classList.remove('attivo'));
     const bottone = document.getElementById('btn-' + nome);
     if (bottone) bottone.classList.add('attivo');
+    chiudiFormUtente();
+    document.getElementById('barra-aggiungi').innerHTML = nome === 'utenti_pc'
+        ? '<button class="btn-aggiungi" onclick="apriFormUtente()">＋ Aggiungi utente</button>' : '';
     await caricaRighe();
 }
 
@@ -300,6 +341,74 @@ async function eliminaRiga(indice) {
         } else {
             const errore = await risposta.json().catch(() => ({}));
             alert('Errore: ' + (errore.detail || 'impossibile eliminare'));
+        }
+    } catch (e) {
+        alert('Impossibile contattare il server: ' + e.message);
+    }
+}
+
+const LIVELLI_WANSPORT = ['C4','C3','C2','C1','B4','B3','B2','B1','A4','A3','A2','A1'];
+
+function aggiornaOpzioniLivello() {
+    const scala = document.getElementById('nu-scala').value;
+    let valori = [];
+    if (scala === 'WANSPORT') {
+        valori = LIVELLI_WANSPORT;
+    } else {
+        for (let i = 0; i <= 28; i++) valori.push((i * 0.25).toFixed(2));
+    }
+    document.getElementById('nu-livello').innerHTML =
+        '<option value="">Scegli…</option>' + valori.map(v => `<option value="${v}">${v}</option>`).join('');
+}
+
+async function apriFormUtente() {
+    ['nu-nome', 'nu-cognome', 'nu-numero'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('nu-scala').value = 'PLAYTOMIC';
+    document.getElementById('nu-lato').value = 'INDIFFERENTE';
+    document.getElementById('nu-validato').checked = false;
+    aggiornaOpzioniLivello();
+    document.getElementById('form-aggiungi-utente').style.display = 'block';
+
+    // Campionati: gli stessi della homepage (quelli pubblicati); se non
+    // si riescono a leggere, si propongono gli slot da 1 a 6.
+    const box = document.getElementById('nu-campionati');
+    let elenco = [];
+    try {
+        const r = await fetch('/padelcity/campionati/pubblico');
+        if (r.ok) elenco = (await r.json()).map(c => ({ slot: c.slot, nome: c.nome_visualizzato }));
+    } catch (e) {}
+    if (elenco.length === 0) elenco = [1, 2, 3, 4, 5, 6].map(n => ({ slot: n, nome: 'Campionato #' + n }));
+    box.innerHTML = elenco.map(c =>
+        `<label><input type="checkbox" class="nu-slot" value="${c.slot}"> ${c.nome}</label>`).join('');
+}
+
+function chiudiFormUtente() {
+    document.getElementById('form-aggiungi-utente').style.display = 'none';
+}
+
+async function salvaNuovoUtente() {
+    const corpo = {
+        nome: document.getElementById('nu-nome').value,
+        cognome: document.getElementById('nu-cognome').value,
+        whatsapp_numero: document.getElementById('nu-numero').value,
+        livello_scala: document.getElementById('nu-scala').value,
+        livello_valore: document.getElementById('nu-livello').value,
+        lato_preferito: document.getElementById('nu-lato').value,
+        campionati: [...document.querySelectorAll('.nu-slot:checked')].map(x => Number(x.value)),
+        whatsapp_validato: document.getElementById('nu-validato').checked,
+    };
+    try {
+        const risposta = await fetch('/admin/padelcity/db/utenti', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
+        if (risposta.ok) {
+            chiudiFormUtente();
+            caricaRighe();
+        } else {
+            const errore = await risposta.json().catch(() => ({}));
+            alert('Errore: ' + (errore.detail || 'operazione non riuscita'));
         }
     } catch (e) {
         alert('Impossibile contattare il server: ' + e.message);
