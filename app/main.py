@@ -5153,6 +5153,32 @@ def elimina_riga_db_brangi(nome_tabella: str, chiavi: dict, db_brg: Session = De
     return {"messaggio": "Riga eliminata con successo."}
 
 
+@app.post("/admin/brangi/utenti/aggiungi", dependencies=[Depends(verifica_credenziali_admin_brangi)])
+def aggiungi_utente_manuale_brangi(
+    dati: brangi_schemas.UtenteManualeBRGCreate,
+    db_brg: Session = Depends(get_db_brg),
+    db: Session = Depends(get_db),
+):
+    """
+    Inserimento manuale di un giocatore dal pannello database (bottone
+    "Aggiungi utente" sulla tabella utenti_brg). Nessun messaggio
+    WhatsApp viene inviato. Vedi crea_utente_manuale_brg.
+    """
+    from app.brangi.servizio_iscrizione import crea_utente_manuale_brg
+
+    try:
+        utente = crea_utente_manuale_brg(db_brg, db, dati)
+    except LookupError as errore:
+        raise HTTPException(status_code=409, detail=str(errore))
+    except ValueError as errore:
+        raise HTTPException(status_code=400, detail=str(errore))
+    except IntegrityError as errore:
+        db_brg.rollback()
+        raise HTTPException(status_code=409, detail=f"Inserimento non consentito dal database: {errore.orig}")
+
+    return {"messaggio": f"Utente {utente.nome} {utente.cognome} aggiunto ({utente.whatsapp_numero}).", "id": utente.id}
+
+
 @app.get("/admin/brangi/debug-config", dependencies=[Depends(verifica_credenziali_admin_brangi)])
 def debug_config_brangi():
     """
