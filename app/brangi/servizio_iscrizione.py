@@ -12,7 +12,7 @@ from app import config as config_generico
 from app.services.conversione_livello import ottieni_livello_playtomic
 
 from app.brangi.models import UtenteBRG, Campionato
-from app.brangi.schemas import IscrizioneBRGCreate
+from app.brangi.schemas import IscrizioneBRGCreate, UtenteManualeBRGCreate
 from app.brangi.whatsapp_brg import genera_otp, invia_otp_whatsapp, invia_riepilogo_iscrizione_brg
 from app.brangi.config import NUMERO_CAMPIONATI
 from app.brangi.pdf_torneo import _nome_campionato_leggibile
@@ -203,3 +203,60 @@ def valida_otp_brg(db_brg: Session, whatsapp_numero: str, codice_otp: str) -> di
     )
 
     return {"messaggio": "Numero verificato con successo."}
+
+
+def normalizza_numero_whatsapp(numero: str) -> str:
+    """
+    Porta un numero scritto a mano nel formato salvato dal form
+    ("+39" + sole cifre). Accetta "333 123 4567", "+39 333...", "0039 333...".
+    """
+    testo = (numero or "").strip().replace(" ", "").replace("-", "").replace(".", "").replace("/", "")
+    if testo.startswith("00"):
+        testo = "+" + testo[2:]
+    if not testo.startswith("+"):
+        testo = "+39" + testo
+    if not testo[1:].isdigit() or not (9 <= len(testo) - 1 <= 15):
+        raise ValueError(f"Numero WhatsApp non valido: '{numero}'")
+    return testo
+
+
+def crea_utente_manuale_brg(db_brg: Session, db_generico: Session, dati: UtenteManualeBRGCreate) -> UtenteBRG:
+    """
+    Inserimento manuale dal pannello admin. Stesse regole del form per
+    livello, lato e campionati, ma:
+    - nessun messaggio WhatsApp (né OTP né riepilogo);
+    - numero considerato validato (lo inserisce l'admin, che lo conosce);
+    - termini/privacy NON risultano accettati: se il giocatore userà il
+      form in futuro, gli verrà chiesto di accettarli lì.
+    Solleva ValueError per dati non validi e LookupError se il numero
+    esiste già (va modificato dalla tabella, non reinserito).
+    """
+    numero = normalizza_numero_whatsapp(dati.whatsapp_numero)
+    if db_brg.query(UtenteBRG).filter(UtenteBRG.whatsapp_numero == numero).first() is not None:
+        raise LookupError(f"Esiste già un utente con il numero {numero}")
+
+    if dati.livello_scala == "PLAYTOMIC":
+        try:
+            valore = float(dati.livello_valore.strip().replace(",", "."))
+        except ValueError:
+            raise ValueError(f"Livello Playtomic non valido: '{dati.livello_valore}' (es. 2.5)")
+        if not (0 <= valore <= 7):
+            raise ValueError(f"Livello Playtomic fuori scala: {valore} (deve essere tra 0 e 7)")
+    livello_playtomic = ottieni_livello_playtomic(db_generico, dati.livello_scala, dati.livello_valore.strip().replace(",", "."))
+
+    utente = UtenteBRG(
+        nome=dati.nome.strip(),
+        cognome=dati.cognome.strip(),
+        whatsapp_numero=numero,
+        whatsapp_validato=True,
+        livello_playtomic=livello_playtomic,
+        livello_dichiarato_scala=dati.livello_scala,
+        livello_dichiarato_originale=dati.livello_valore.strip().upper() if dati.livello_scala == "WANSPORT" else None,
+        lato_preferito=dati.lato_preferito,
+        campionati_bitmask=crea_campionati_bitmask(dati.campionati),
+        stato_account="ATTIVO",
+    )
+    db_brg.add(utente)
+    db_brg.commit()
+    db_brg.refresh(utente)
+    return utente

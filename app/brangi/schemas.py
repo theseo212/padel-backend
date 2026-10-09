@@ -49,3 +49,22 @@ class IscrizioneBRGResponse(BaseModel):
 class ValidaOtpBRGRequest(BaseModel):
     whatsapp_numero: str
     codice_otp: str
+
+
+class UtenteManualeBRGCreate(BaseModel):
+    """Inserimento manuale di un giocatore dal pannello admin (database)."""
+    nome: str = Field(..., min_length=1)
+    cognome: str = Field(..., min_length=1)
+    whatsapp_numero: str = Field(..., description="es. 3331234567 oppure +393331234567")
+    livello_scala: Literal["PLAYTOMIC", "WANSPORT"]
+    livello_valore: str = Field(..., description="es. '3.5' oppure 'B2'")
+    lato_preferito: Literal["DX", "SX", "INDIFFERENTE"]
+    campionati: list[int] = Field(default_factory=list)
+
+    @field_validator("campionati")
+    @classmethod
+    def _valida_slot_campionati(cls, valori: list[int]) -> list[int]:
+        for slot in valori:
+            if not (1 <= slot <= NUMERO_CAMPIONATI):
+                raise ValueError(f"Slot campionato non valido: {slot} (deve essere tra 1 e {NUMERO_CAMPIONATI})")
+        return valori
