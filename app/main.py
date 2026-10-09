@@ -16,7 +16,7 @@ from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, U
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import text, func
@@ -2427,6 +2427,47 @@ def _carica_iscrizione_pv_da_token(token: str, db_pv: Session):
     return iscrizione, torneo, utente
 
 
+# =====================================================================
+# SMISTAMENTO DEI LINK "RISPONDI" TRA CIRCOLI
+# I template WhatsApp sono condivisi tra i circoli (stesso numero, stessi
+# Content SID) e il loro bottone "Rispondi qui" ha l'indirizzo di base
+# scritto FISSO dentro il template su Twilio: /palavillage/rispondi/{token}.
+# Quindi anche i giocatori degli altri circoli arrivano qui. Se il token
+# non è di Palavillage, lo si cerca negli altri circoli e si rimanda alla
+# pagina giusta (307: per il POST conserva metodo e dati del form).
+#
+# NUOVO CIRCOLO che riusa gli stessi template -> aggiungere UNA riga qui
+# sotto: (percorso URL, modulo del suo database, nome della SessionLocal,
+# nome della funzione _carica_iscrizione_xx_da_token di questo file).
+# Se invece il circolo ha template propri con il proprio indirizzo nel
+# bottone, non serve aggiungerlo.
+# =====================================================================
+CIRCOLI_ALTERNATIVI_RISPONDI = [
+    ("padelcity", "app.padelcity.database", "SessionLocalPC", "_carica_iscrizione_pc_da_token"),
+    ("brangi", "app.brangi.database", "SessionLocalBRG", "_carica_iscrizione_brg_da_token"),
+]
+
+
+def _percorso_circolo_per_token(token: str) -> str | None:
+    """Restituisce il percorso del circolo a cui appartiene il token, o None."""
+    import importlib
+    for percorso, modulo_db, nome_sessione, nome_caricatore in CIRCOLI_ALTERNATIVI_RISPONDI:
+        try:
+            sessione = getattr(importlib.import_module(modulo_db), nome_sessione)()
+        except Exception as errore:
+            print(f"[RISPONDI][SMISTAMENTO] {percorso}: database non raggiungibile ({errore})")
+            continue
+        try:
+            iscrizione, _, _ = globals()[nome_caricatore](token, sessione)
+            if iscrizione is not None:
+                return percorso
+        except Exception as errore:
+            print(f"[RISPONDI][SMISTAMENTO] {percorso}: errore nella ricerca del token ({errore})")
+        finally:
+            sessione.close()
+    return None
+
+
 @app.get("/palavillage/rispondi/{token}")
 def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(get_db_pv)):
     """
@@ -2444,6 +2485,9 @@ def pagina_rispondi_iscrizione_palavillage(token: str, db_pv: Session = Depends(
     adesso_italia = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
     iscrizione, torneo, utente = _carica_iscrizione_pv_da_token(token, db_pv)
     if iscrizione is None:
+        percorso_altro_circolo = _percorso_circolo_per_token(token)
+        if percorso_altro_circolo:
+            return RedirectResponse(f"/{percorso_altro_circolo}/rispondi/{token}", status_code=307)
         return _pagina_conferma_circolo_html(
             "Link non valido",
             "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
@@ -2520,6 +2564,9 @@ async def gestisci_risposta_iscrizione_palavillage(token: str, request: Request,
 
     iscrizione, torneo, utente = _carica_iscrizione_pv_da_token(token, db_pv)
     if iscrizione is None:
+        percorso_altro_circolo = _percorso_circolo_per_token(token)
+        if percorso_altro_circolo:
+            return RedirectResponse(f"/{percorso_altro_circolo}/rispondi/{token}", status_code=307)
         return _pagina_conferma_circolo_html(
             "Link non valido",
             "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
