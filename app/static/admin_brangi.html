@@ -214,13 +214,14 @@ function renderizzaTabellaTornei(tornei) {
                 <td><strong>${t.giorno_leggibile}</strong> ${formattaData(t.data)}<br><span style="color:#888; font-size:12px;">${t.campionato_nome || ''}</span></td>
                 <td><span class="badge-stato ${classeBadge}">${t.stato_leggibile}</span>${badgeVacanza}</td>
                 <td>${t.numero_confermati}</td>
+                <td>${t.numero_iscritti ?? '–'}</td>
                 <td>${bottoneAzione}</td>
             </tr>`;
     }).join('');
 
     contenitore.innerHTML = `
         <table>
-            <thead><tr><th>Data e giorno</th><th>Stato</th><th>Confermati</th><th>Azioni</th></tr></thead>
+            <thead><tr><th>Data e giorno</th><th>Stato</th><th>Confermati</th><th>Iscritti</th><th>Azioni</th></tr></thead>
             <tbody>${righe}</tbody>
         </table>`;
 }
