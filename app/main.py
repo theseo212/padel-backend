@@ -1739,7 +1739,7 @@ def elenca_tornei_padelcity(db_pc: Session = Depends(get_db_pc)):
     per il pannello admin: data/giorno, stato, numero di confermati,
     ed eventuali gruppi con un posto vacante (nessuna riserva trovata).
     """
-    from app.padelcity.models import Torneo, IscrizioneTorneo, Campionato, GruppoPC, GruppoMembroPC
+    from app.padelcity.models import Torneo, IscrizioneTorneo, Campionato, GruppoPC, GruppoMembroPC, UtentePC
     from app.padelcity.pdf_torneo import _nome_campionato_leggibile
     from datetime import date as _date, timedelta as _timedelta
 
@@ -1772,6 +1772,23 @@ def elenca_tornei_padelcity(db_pc: Session = Depends(get_db_pc)):
             .count()
         )
 
+        # ISCRITTI: tutti i giocatori attivi iscritti a questo CAMPIONATO
+        # (bit dello slot nel loro campionati_bitmask), indipendentemente
+        # da quanti abbiano poi confermato questa singola tappa. Stesso
+        # criterio usato dal job che manda le richieste di iscrizione.
+        if campionato:
+            bit_slot = 1 << (campionato.slot - 1)
+            numero_iscritti = (
+                db_pc.query(UtentePC)
+                .filter(
+                    UtentePC.stato_account == "ATTIVO",
+                    UtentePC.campionati_bitmask.op("&")(bit_slot) == bit_slot,
+                )
+                .count()
+            )
+        else:
+            numero_iscritti = 0
+
         gruppi = db_pc.query(GruppoPC).filter(GruppoPC.torneo_id == torneo.id).all()
         vacanza = False
         for gruppo in gruppi:
@@ -1787,6 +1804,7 @@ def elenca_tornei_padelcity(db_pc: Session = Depends(get_db_pc)):
             "stato": torneo.stato,
             "stato_leggibile": etichette_stato.get(torneo.stato, torneo.stato),
             "numero_confermati": numero_confermati,
+            "numero_iscritti": numero_iscritti,
             "attivo": torneo.attivo,
             "cancellabile": torneo.stato in {"PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"} and torneo.attivo,
             "vacanza_senza_riserve": vacanza,
