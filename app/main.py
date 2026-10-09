@@ -4939,6 +4939,84 @@ def leggi_tabella_db_padelcity(nome_tabella: str, db_pc: Session = Depends(get_d
     }
 
 
+@app.post("/admin/padelcity/db/utenti", dependencies=[Depends(verifica_credenziali_admin_padelcity)])
+def aggiungi_utente_db_padelcity(dati: dict, db_pc: Session = Depends(get_db_pc), db: Session = Depends(get_db)):
+    """
+    Inserimento manuale di un giocatore PadelCity dal pannello database
+    (pulsante "Aggiungi" nella tabella utenti_pc). Usa gli stessi
+    campi e le stesse regole del form pubblico (livello convertito in
+    scala Playtomic, campionati scelti per SLOT), ma senza OTP: il numero
+    lo inserisce l'admin, quindi per default NON è segnato come verificato
+    (se poi la persona usa il form, farà l'OTP una volta). I termini e la
+    privacy risultano non accettati finché non li accetta lei stessa dal form.
+    """
+    import re
+    from app.padelcity.models import UtentePC
+    from app.padelcity.config import NUMERO_CAMPIONATI
+    from app.padelcity.servizio_iscrizione import crea_campionati_bitmask
+
+    nome = (dati.get("nome") or "").strip()
+    cognome = (dati.get("cognome") or "").strip()
+    if not nome or not cognome:
+        raise HTTPException(status_code=400, detail="Nome e cognome sono obbligatori")
+
+    # Numero in formato internazionale: se manca il prefisso, si assume l'Italia (+39), come nel form.
+    numero = re.sub(r"[\s\-().]", "", str(dati.get("whatsapp_numero") or ""))
+    if numero.startswith("00"):
+        numero = "+" + numero[2:]
+    elif numero and not numero.startswith("+"):
+        numero = "+39" + numero
+    if not re.fullmatch(r"\+\d{8,15}", numero):
+        raise HTTPException(status_code=400, detail="Numero WhatsApp non valido (es. +393331234567)")
+
+    lato = dati.get("lato_preferito")
+    if lato not in ("DX", "SX", "INDIFFERENTE"):
+        raise HTTPException(status_code=400, detail="Lato preferito non valido (DX, SX o INDIFFERENTE)")
+
+    scala = dati.get("livello_scala")
+    if scala not in ("PLAYTOMIC", "WANSPORT"):
+        raise HTTPException(status_code=400, detail="Scala del livello non valida (PLAYTOMIC o WANSPORT)")
+    valore_livello = str(dati.get("livello_valore") or "").strip()
+    if not valore_livello:
+        raise HTTPException(status_code=400, detail="Scegli il livello di gioco")
+    try:
+        livello_playtomic = ottieni_livello_playtomic(db, scala, valore_livello)
+    except ValueError as errore:
+        raise HTTPException(status_code=400, detail=f"Livello non valido: {errore}")
+    if not (0 <= livello_playtomic <= 7):
+        raise HTTPException(status_code=400, detail="Il livello Playtomic deve essere tra 0.00 e 7.00")
+
+    try:
+        slot = [int(x) for x in (dati.get("campionati") or [])]
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Elenco campionati non valido")
+    if any(not (1 <= x <= NUMERO_CAMPIONATI) for x in slot):
+        raise HTTPException(status_code=400, detail=f"Slot campionato non valido (deve essere tra 1 e {NUMERO_CAMPIONATI})")
+
+    if db_pc.query(UtentePC).filter(UtentePC.whatsapp_numero == numero).first():
+        raise HTTPException(status_code=409, detail=f"Esiste già un utente con il numero {numero}")
+
+    utente = UtentePC(
+        nome=nome,
+        cognome=cognome,
+        whatsapp_numero=numero,
+        whatsapp_validato=bool(dati.get("whatsapp_validato", False)),
+        livello_playtomic=livello_playtomic,
+        livello_dichiarato_scala=scala,
+        livello_dichiarato_originale=valore_livello if scala == "WANSPORT" else None,
+        lato_preferito=lato,
+        campionati_bitmask=crea_campionati_bitmask(slot),
+    )
+    db_pc.add(utente)
+    try:
+        db_pc.commit()
+    except IntegrityError as errore:
+        db_pc.rollback()
+        raise HTTPException(status_code=409, detail=f"Inserimento non consentito dal database: {errore.orig}")
+
+    return {"messaggio": "Utente aggiunto con successo.", "id": utente.id}
+
+
 @app.put("/admin/padelcity/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin_padelcity)])
 def modifica_riga_db_padelcity(nome_tabella: str, dati: dict, db_pc: Session = Depends(get_db_pc)):
     """Modifica una riga di una tabella PadelCity (stessa logica del pannello generico)."""
