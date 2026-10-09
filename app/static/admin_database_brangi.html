@@ -101,6 +101,30 @@
     .btn-verde { background: #d5f2df; color: #1a7a3a; }
     .btn-rosso { background: #fbdcdc; color: #a3231f; }
     .btn-secondario { background: #f0f2f5; color: #333; }
+
+    .btn-aggiungi { background: #2563eb; color: white; padding: 8px 14px; font-size: 13px; margin-bottom: 10px; }
+    .pannello-aggiungi {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        padding: 16px;
+        margin-bottom: 16px;
+        max-width: 640px;
+    }
+    .pannello-aggiungi h3 { margin: 0 0 12px; font-size: 15px; }
+    .griglia-campi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .griglia-campi label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
+    .griglia-campi input, .griglia-campi select {
+        padding: 7px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; width: auto;
+    }
+    .campo-intero { grid-column: 1 / -1; }
+    .elenco-campionati { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: #333; }
+    .elenco-campionati label { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: #333; }
+    .nota-aggiungi { font-size: 12px; color: #777; margin: 10px 0 12px; }
+    .esito-aggiungi { font-size: 13px; margin-top: 8px; }
+    .esito-aggiungi.ok { color: #1a7a3a; }
+    .esito-aggiungi.errore { color: #a3231f; }
+    @media (max-width: 560px) { .griglia-campi { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -121,6 +145,8 @@
 </div>
 
 <div id="selettore-tabelle" class="selettore-tabelle"></div>
+<div id="azioni-tabella"></div>
+<div id="pannello-aggiungi"></div>
 <div id="contatore-righe" class="sottotitolo"></div>
 <div class="contenitore-scroll">
     <div id="contenitore-tabella-db"></div>
@@ -153,6 +179,10 @@ async function selezionaTabella(nome) {
     document.querySelectorAll('.btn-tabella').forEach(b => b.classList.remove('attivo'));
     const bottone = document.getElementById('btn-' + nome);
     if (bottone) bottone.classList.add('attivo');
+    document.getElementById('pannello-aggiungi').innerHTML = '';
+    document.getElementById('azioni-tabella').innerHTML = nome === 'utenti_brg'
+        ? '<button class="btn-aggiungi" onclick="apriPannelloAggiungi()">➕ Aggiungi utente</button>'
+        : '';
     await caricaRighe();
 }
 
@@ -303,6 +333,110 @@ async function eliminaRiga(indice) {
         }
     } catch (e) {
         alert('Impossibile contattare il server: ' + e.message);
+    }
+}
+
+// ---------- Inserimento manuale di un utente (solo tabella utenti_brg) ----------
+async function apriPannelloAggiungi() {
+    const pannello = document.getElementById('pannello-aggiungi');
+    pannello.innerHTML = '<div class="pannello-aggiungi"><p class="vuoto">Caricamento campionati…</p></div>';
+
+    let campionati = [];
+    try {
+        const risposta = await fetch('/admin/brangi/campionati');
+        if (!risposta.ok) throw new Error(`Errore server (${risposta.status})`);
+        const tutti = await risposta.json();
+        const perSlot = {};
+        tutti.filter(c => c.stato === 'APERTO').forEach(c => { perSlot[c.slot] = c; });
+        campionati = Object.values(perSlot).sort((a, b) => a.slot - b.slot);
+    } catch (e) {
+        pannello.innerHTML = `<div class="pannello-aggiungi"><p class="vuoto">Errore nel caricare i campionati: ${e.message}</p></div>`;
+        return;
+    }
+
+    const caselle = campionati.length
+        ? campionati.map(c => {
+            const orario = c.orario_inizio ? ` (${c.orario_inizio})` : '';
+            return `<label><input type="checkbox" name="campionato" value="${c.slot}"> ${c.nome_visualizzato}${orario}</label>`;
+          }).join('')
+        : '<span class="vuoto">Nessun campionato aperto</span>';
+
+    pannello.innerHTML = `
+        <div class="pannello-aggiungi">
+            <h3>Nuovo utente</h3>
+            <div class="griglia-campi">
+                <label>Nome <input type="text" id="nuovo-nome"></label>
+                <label>Cognome <input type="text" id="nuovo-cognome"></label>
+                <label class="campo-intero">Numero WhatsApp
+                    <input type="text" id="nuovo-whatsapp" placeholder="3331234567 oppure +393331234567">
+                </label>
+                <label>Scala livello
+                    <select id="nuovo-scala">
+                        <option value="PLAYTOMIC">Playtomic</option>
+                        <option value="WANSPORT">Wansport</option>
+                    </select>
+                </label>
+                <label>Livello <input type="text" id="nuovo-livello" placeholder="es. 2.5 oppure B2"></label>
+                <label>Lato preferito
+                    <select id="nuovo-lato">
+                        <option value="INDIFFERENTE">Indifferente</option>
+                        <option value="DX">Destra</option>
+                        <option value="SX">Sinistra</option>
+                    </select>
+                </label>
+                <div class="campo-intero">
+                    <div style="font-size:12px; color:#555; margin-bottom:6px;">Campionati</div>
+                    <div class="elenco-campionati">${caselle}</div>
+                </div>
+            </div>
+            <p class="nota-aggiungi">Non viene inviato nessun messaggio WhatsApp. Il numero viene considerato verificato;
+            termini e privacy risultano non accettati finché il giocatore non usa il form online.</p>
+            <button class="btn-verde" onclick="salvaNuovoUtente()">Salva utente</button>
+            <button class="btn-secondario" onclick="document.getElementById('pannello-aggiungi').innerHTML=''">Annulla</button>
+            <div id="esito-aggiungi" class="esito-aggiungi"></div>
+        </div>`;
+    document.getElementById('nuovo-nome').focus();
+}
+
+async function salvaNuovoUtente() {
+    const valore = id => document.getElementById(id).value.trim();
+    const esito = document.getElementById('esito-aggiungi');
+    const corpo = {
+        nome: valore('nuovo-nome'),
+        cognome: valore('nuovo-cognome'),
+        whatsapp_numero: valore('nuovo-whatsapp'),
+        livello_scala: valore('nuovo-scala'),
+        livello_valore: valore('nuovo-livello').replace(',', '.'),
+        lato_preferito: valore('nuovo-lato'),
+        campionati: [...document.querySelectorAll('input[name="campionato"]:checked')].map(c => Number(c.value)),
+    };
+    if (!corpo.nome || !corpo.cognome || !corpo.whatsapp_numero || !corpo.livello_valore) {
+        esito.className = 'esito-aggiungi errore';
+        esito.textContent = 'Compila nome, cognome, numero WhatsApp e livello.';
+        return;
+    }
+    if (corpo.campionati.length === 0 && !confirm('Nessun campionato selezionato: l\'utente non riceverà richieste. Salvare comunque?')) return;
+
+    try {
+        const risposta = await fetch('/admin/brangi/utenti/aggiungi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo),
+        });
+        const dati = await risposta.json().catch(() => ({}));
+        if (risposta.ok) {
+            document.getElementById('pannello-aggiungi').innerHTML =
+                `<p class="esito-aggiungi ok">✅ ${dati.messaggio}</p>`;
+            caricaRighe();
+        } else {
+            let dettaglio = dati.detail;
+            if (Array.isArray(dettaglio)) dettaglio = dettaglio.map(d => d.msg).join('; ');
+            esito.className = 'esito-aggiungi errore';
+            esito.textContent = 'Errore: ' + (dettaglio || 'inserimento non riuscito');
+        }
+    } catch (e) {
+        esito.className = 'esito-aggiungi errore';
+        esito.textContent = 'Impossibile contattare il server: ' + e.message;
     }
 }
 
