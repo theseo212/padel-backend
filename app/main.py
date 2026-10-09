@@ -2107,10 +2107,13 @@ def chiudi_campionato_brangi(campionato_id: int, db_brg: Session = Depends(get_d
 def elenca_tornei_brangi(db_brg: Session = Depends(get_db_brg)):
     """
     Elenco dei tornei (passati recenti + tutti i futuri già generati),
-    per il pannello admin: data/giorno, stato, numero di confermati,
-    ed eventuali gruppi con un posto vacante (nessuna riserva trovata).
+    per il pannello admin: data/giorno, stato, numero di confermati
+    (per QUELLA tappa), numero di iscritti (al campionato della tappa:
+    utenti ATTIVI col bit dello slot nel campionati_bitmask, stesso
+    criterio usato da invia_richieste_iscrizione per scegliere a chi
+    scrivere) ed eventuali gruppi con un posto vacante.
     """
-    from app.brangi.models import Torneo, IscrizioneTorneo, Campionato, GruppoBRG, GruppoMembroBRG
+    from app.brangi.models import Torneo, IscrizioneTorneo, Campionato, GruppoBRG, GruppoMembroBRG, UtenteBRG
     from app.brangi.pdf_torneo import _nome_campionato_leggibile
     from datetime import date as _date, timedelta as _timedelta
 
@@ -2134,6 +2137,8 @@ def elenca_tornei_brangi(db_brg: Session = Depends(get_db_brg)):
         "ANNULLATO": "Annullato",
     }
 
+    iscritti_per_slot = {}  # cache: lo stesso slot compare in più tappe
+
     risultato = []
     for torneo in tornei:
         campionato = db_brg.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
@@ -2142,6 +2147,20 @@ def elenca_tornei_brangi(db_brg: Session = Depends(get_db_brg)):
             .filter(IscrizioneTorneo.torneo_id == torneo.id, IscrizioneTorneo.stato_risposta == "CONFERMATO")
             .count()
         )
+
+        numero_iscritti = None
+        if campionato:
+            if campionato.slot not in iscritti_per_slot:
+                bit_slot = 1 << (campionato.slot - 1)
+                iscritti_per_slot[campionato.slot] = (
+                    db_brg.query(UtenteBRG)
+                    .filter(
+                        UtenteBRG.stato_account == "ATTIVO",
+                        UtenteBRG.campionati_bitmask.op("&")(bit_slot) == bit_slot,
+                    )
+                    .count()
+                )
+            numero_iscritti = iscritti_per_slot[campionato.slot]
 
         gruppi = db_brg.query(GruppoBRG).filter(GruppoBRG.torneo_id == torneo.id).all()
         vacanza = False
@@ -2158,6 +2177,7 @@ def elenca_tornei_brangi(db_brg: Session = Depends(get_db_brg)):
             "stato": torneo.stato,
             "stato_leggibile": etichette_stato.get(torneo.stato, torneo.stato),
             "numero_confermati": numero_confermati,
+            "numero_iscritti": numero_iscritti,
             "attivo": torneo.attivo,
             "cancellabile": torneo.stato in {"PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"} and torneo.attivo,
             "vacanza_senza_riserve": vacanza,
