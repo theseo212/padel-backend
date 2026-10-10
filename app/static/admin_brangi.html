@@ -107,6 +107,30 @@
     }
     #classifica-espansa ol { margin: 8px 0 0; padding-left: 22px; }
     #classifica-espansa li { padding: 3px 0; font-size: 14px; }
+    /* Numeri Confermati/Iscritti con l'elenco dei nomi al passaggio del mouse (o al tocco) */
+    .numero-con-nomi {
+        cursor: help;
+        border-bottom: 1px dotted #888;
+        padding: 0 2px;
+    }
+    .numero-con-nomi:focus { outline: 2px solid #93c5fd; border-radius: 3px; }
+    #riquadro-nomi {
+        position: fixed;
+        z-index: 1000;
+        display: none;
+        background: #1f2937;
+        color: #f9fafb;
+        font-size: 13px;
+        line-height: 1.45;
+        padding: 8px 12px;
+        border-radius: 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+        max-width: 280px;
+        max-height: 320px;
+        overflow-y: auto;
+        white-space: normal;
+    }
+    #riquadro-nomi .titolo-riquadro { font-weight: 600; margin-bottom: 4px; color: #cbd5e1; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -178,6 +202,52 @@ function mostraMessaggio(idContenitore, testo, tipo) {
     setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
+// ---------- Riquadro con i nomi (Confermati / Iscritti) ----------
+function escapeHtml(testo) {
+    return String(testo).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function cellaConNomi(numero, nomi, titolo) {
+    if (!nomi || nomi.length === 0) return String(numero);
+    const dati = escapeHtml(JSON.stringify({ titolo, nomi }));
+    return `<span class="numero-con-nomi" tabindex="0" data-nomi="${dati}"
+        onmouseenter="mostraNomi(this)" onmouseleave="nascondiNomi()"
+        onfocus="mostraNomi(this)" onblur="nascondiNomi()"
+        onclick="event.stopPropagation(); mostraNomi(this)">${numero}</span>`;
+}
+
+function riquadroNomi() {
+    let r = document.getElementById('riquadro-nomi');
+    if (!r) {
+        r = document.createElement('div');
+        r.id = 'riquadro-nomi';
+        document.body.appendChild(r);
+    }
+    return r;
+}
+
+function mostraNomi(elemento) {
+    const { titolo, nomi } = JSON.parse(elemento.dataset.nomi);
+    const r = riquadroNomi();
+    r.innerHTML = `<div class="titolo-riquadro">${escapeHtml(titolo)} (${nomi.length})</div>`
+        + nomi.map(n => `<div>${escapeHtml(n)}</div>`).join('');
+    r.style.display = 'block';
+    const pos = elemento.getBoundingClientRect();
+    const larghezza = r.offsetWidth, altezza = r.offsetHeight;
+    let sinistra = Math.min(pos.left, window.innerWidth - larghezza - 8);
+    let alto = pos.bottom + 6;
+    if (alto + altezza > window.innerHeight - 8) alto = Math.max(8, pos.top - altezza - 6);
+    r.style.left = Math.max(8, sinistra) + 'px';
+    r.style.top = alto + 'px';
+}
+
+function nascondiNomi() {
+    const r = document.getElementById('riquadro-nomi');
+    if (r) r.style.display = 'none';
+}
+document.addEventListener('click', nascondiNomi);
+window.addEventListener('scroll', nascondiNomi, true);
+
 function formattaData(isoData) {
     const d = new Date(isoData + 'T00:00:00');
     return d.toLocaleDateString('it-IT', { weekday: undefined, day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -213,8 +283,8 @@ function renderizzaTabellaTornei(tornei) {
             <tr class="${t.attivo ? '' : 'torneo-non-attivo'}">
                 <td><strong>${t.giorno_leggibile}</strong> ${formattaData(t.data)}<br><span style="color:#888; font-size:12px;">${t.campionato_nome || ''}</span></td>
                 <td><span class="badge-stato ${classeBadge}">${t.stato_leggibile}</span>${badgeVacanza}</td>
-                <td>${t.numero_confermati}</td>
-                <td>${t.numero_iscritti ?? '–'}</td>
+                <td>${cellaConNomi(t.numero_confermati, t.nomi_confermati, 'Confermati')}</td>
+                <td>${t.numero_iscritti == null ? '–' : cellaConNomi(t.numero_iscritti, t.nomi_iscritti, 'Iscritti')}</td>
                 <td>${bottoneAzione}</td>
             </tr>`;
     }).join('');
