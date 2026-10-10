@@ -2160,25 +2160,43 @@ def elenca_tornei_brangi(db_brg: Session = Depends(get_db_brg)):
     risultato = []
     for torneo in tornei:
         campionato = db_brg.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
-        numero_confermati = (
-            db_brg.query(IscrizioneTorneo)
+        # Confermati: con nome e cognome, per il riquadro al passaggio del
+        # mouse nel pannello. Le riserve (rimaste fuori dai gruppi) sono
+        # segnalate a parte.
+        righe_confermati = (
+            db_brg.query(UtenteBRG.nome, UtenteBRG.cognome, IscrizioneTorneo.ruolo)
+            .join(IscrizioneTorneo, IscrizioneTorneo.utente_id == UtenteBRG.id)
             .filter(IscrizioneTorneo.torneo_id == torneo.id, IscrizioneTorneo.stato_risposta == "CONFERMATO")
-            .count()
+            .all()
         )
+        nomi_confermati = sorted(
+            (
+                f"{nome} {cognome}" + (" (riserva)" if (ruolo or "").startswith("RISERVA") else "")
+                for nome, cognome, ruolo in righe_confermati
+            ),
+            key=str.lower,
+        )
+        numero_confermati = len(nomi_confermati)
 
         numero_iscritti = None
+        nomi_iscritti = []
         if campionato:
             if campionato.slot not in iscritti_per_slot:
                 bit_slot = 1 << (campionato.slot - 1)
-                iscritti_per_slot[campionato.slot] = (
-                    db_brg.query(UtenteBRG)
-                    .filter(
-                        UtenteBRG.stato_account == "ATTIVO",
-                        UtenteBRG.campionati_bitmask.op("&")(bit_slot) == bit_slot,
-                    )
-                    .count()
+                iscritti_per_slot[campionato.slot] = sorted(
+                    (
+                        f"{nome} {cognome}"
+                        for nome, cognome in db_brg.query(UtenteBRG.nome, UtenteBRG.cognome)
+                        .filter(
+                            UtenteBRG.stato_account == "ATTIVO",
+                            UtenteBRG.campionati_bitmask.op("&")(bit_slot) == bit_slot,
+                        )
+                        .all()
+                    ),
+                    key=str.lower,
                 )
-            numero_iscritti = iscritti_per_slot[campionato.slot]
+            nomi_iscritti = iscritti_per_slot[campionato.slot]
+            numero_iscritti = len(nomi_iscritti)
 
         gruppi = db_brg.query(GruppoBRG).filter(GruppoBRG.torneo_id == torneo.id).all()
         vacanza = False
@@ -2196,6 +2214,8 @@ def elenca_tornei_brangi(db_brg: Session = Depends(get_db_brg)):
             "stato_leggibile": etichette_stato.get(torneo.stato, torneo.stato),
             "numero_confermati": numero_confermati,
             "numero_iscritti": numero_iscritti,
+            "nomi_confermati": nomi_confermati,
+            "nomi_iscritti": nomi_iscritti,
             "attivo": torneo.attivo,
             "cancellabile": torneo.stato in {"PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"} and torneo.attivo,
             "vacanza_senza_riserve": vacanza,
