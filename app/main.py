@@ -55,6 +55,12 @@ from app.brangi.database import get_db_brg
 from app.brangi.routing import gestisci_webhook_brangi
 from app.brangi import schemas as brangi_schemas
 from app.brangi import models as brangi_models
+
+
+from app.bunker.database import get_db_bun
+from app.bunker.routing import gestisci_webhook_bunker
+from app.bunker import schemas as bunker_schemas
+from app.bunker import models as bunker_models
 from app.matching.feedback import (
     segna_partita_giocata, registra_feedback, controlla_cicli_feedback,
     controlla_partite_da_segnare_automaticamente, rispondi_feedback_da_whatsapp,
@@ -265,6 +271,53 @@ def verifica_credenziali_admin_brangi_qualsiasi(credenziali: HTTPBasicCredential
     # (altrimenti uno username/password entrambi vuoti "matcherebbero" per errore).
     if ADMIN_BRG_CIRCOLO_USERNAME and ADMIN_BRG_CIRCOLO_PASSWORD:
         if secrets.compare_digest(credenziali.username, ADMIN_BRG_CIRCOLO_USERNAME) and secrets.compare_digest(credenziali.password, ADMIN_BRG_CIRCOLO_PASSWORD):
+            return "circolo"
+
+    raise HTTPException(status_code=401, detail="Credenziali non valide", headers={"WWW-Authenticate": "Basic"})
+
+
+def verifica_credenziali_admin_bunker(credenziali: HTTPBasicCredentials = Depends(_sicurezza_admin)):
+    """
+    Stesso schema di verifica_credenziali_admin, ma con le credenziali
+    DEDICATE di Bunker (ADMIN_BUN_USERNAME/ADMIN_BUN_PASSWORD) invece
+    di quelle generiche di AnnaPadel - i due pannelli restano separati
+    anche nell'accesso, non solo nei dati.
+    """
+    from app.bunker.config import ADMIN_BUN_USERNAME, ADMIN_BUN_PASSWORD
+
+    utente_corretto = secrets.compare_digest(credenziali.username, ADMIN_BUN_USERNAME)
+    password_corretta = secrets.compare_digest(credenziali.password, ADMIN_BUN_PASSWORD)
+
+    if not (utente_corretto and password_corretta):
+        raise HTTPException(
+            status_code=401,
+            detail="Credenziali non valide",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credenziali.username
+
+
+def verifica_credenziali_admin_bunker_qualsiasi(credenziali: HTTPBasicCredentials = Depends(_sicurezza_admin)) -> str:
+    """
+    Accetta SIA le credenziali complete (ADMIN_BUN_USERNAME/PASSWORD) SIA
+    quelle ridotte del circolo (ADMIN_BUN_CIRCOLO_USERNAME/PASSWORD).
+    Usata sulle pagine/azioni che il circolo deve poter usare da solo
+    (tornei, campionati) - a differenza di verifica_credenziali_admin_bunker
+    "piena", riservata a database, strumenti di forzatura e report di
+    fatturazione, che il circolo non deve vedere.
+
+    Ritorna "completo" o "circolo" a seconda di quale credenziale ha
+    fatto match, così il frontend sa quali pulsanti/pagine mostrare.
+    """
+    from app.bunker.config import ADMIN_BUN_USERNAME, ADMIN_BUN_PASSWORD, ADMIN_BUN_CIRCOLO_USERNAME, ADMIN_BUN_CIRCOLO_PASSWORD
+
+    if secrets.compare_digest(credenziali.username, ADMIN_BUN_USERNAME) and secrets.compare_digest(credenziali.password, ADMIN_BUN_PASSWORD):
+        return "completo"
+
+    # Le credenziali circolo, se mai lasciate vuote su Railway, non devono MAI dare accesso
+    # (altrimenti uno username/password entrambi vuoti "matcherebbero" per errore).
+    if ADMIN_BUN_CIRCOLO_USERNAME and ADMIN_BUN_CIRCOLO_PASSWORD:
+        if secrets.compare_digest(credenziali.username, ADMIN_BUN_CIRCOLO_USERNAME) and secrets.compare_digest(credenziali.password, ADMIN_BUN_CIRCOLO_PASSWORD):
             return "circolo"
 
     raise HTTPException(status_code=401, detail="Credenziali non valide", headers={"WWW-Authenticate": "Basic"})
@@ -592,6 +645,110 @@ def job_brangi_finalizza_punteggi():
             print(f"[BRANGI][CLASSIFICA] Finalizzati {n} tornei.")
     finally:
         db_brg.close()
+
+
+def job_bunker_genera_tornei_futuri():
+    """Assicura che esistano i tornei per i prossimi giorni (vedi motore_torneo.py)."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import genera_tornei_futuri
+    db_bun = SessionLocalBUN()
+    try:
+        n = genera_tornei_futuri(db_bun)
+        if n:
+            print(f"[BUNKER][TORNEI] Creati {n} nuovi tornei futuri.")
+    finally:
+        db_bun.close()
+
+
+def job_bunker_richieste_iscrizione():
+    """T-6gg: manda la richiesta di iscrizione ai tornei che raggiungono la soglia."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import job_invia_richieste_iscrizione
+    db_bun = SessionLocalBUN()
+    try:
+        n = job_invia_richieste_iscrizione(db_bun)
+        if n:
+            print(f"[BUNKER][RICHIESTE] Elaborati {n} tornei.")
+    finally:
+        db_bun.close()
+
+
+def job_bunker_solleciti_iscrizione():
+    """T-3gg: manda un sollecito a chi non ha ancora risposto."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import job_invia_solleciti_iscrizione
+    db_bun = SessionLocalBUN()
+    try:
+        n = job_invia_solleciti_iscrizione(db_bun)
+        if n:
+            print(f"[BUNKER][SOLLECITI] Elaborati {n} tornei.")
+    finally:
+        db_bun.close()
+
+
+def job_bunker_forma_gruppi():
+    """T-12h: chiude le iscrizioni e forma i gruppi da 4."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import job_forma_gruppi_torneo
+    db_bun = SessionLocalBUN()
+    try:
+        n = job_forma_gruppi_torneo(db_bun)
+        if n:
+            print(f"[BUNKER][GRUPPI] Formati i gruppi per {n} tornei.")
+    finally:
+        db_bun.close()
+
+
+def job_bunker_promozioni_scadute():
+    """Chi non ha risposto in tempo a una proposta di promozione riserva viene saltato, si passa alla successiva."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import job_gestisci_promozioni_scadute
+    db_bun = SessionLocalBUN()
+    try:
+        n = job_gestisci_promozioni_scadute(db_bun)
+        if n:
+            print(f"[BUNKER][PROMOZIONI] {n} proposte scadute gestite.")
+    finally:
+        db_bun.close()
+
+
+def job_bunker_richiesta_punteggio():
+    """A fine torneo, chiede il punteggio a chi ha giocato."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import job_richiedi_punteggio_torneo
+    db_bun = SessionLocalBUN()
+    try:
+        n = job_richiedi_punteggio_torneo(db_bun)
+        if n:
+            print(f"[BUNKER][PUNTEGGIO] Richiesto per {n} tornei.")
+    finally:
+        db_bun.close()
+
+
+def job_bunker_sollecito_punteggio():
+    """T+2h: sollecita chi non ha ancora risposto con il proprio punteggio."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import job_sollecito_punteggio_torneo
+    db_bun = SessionLocalBUN()
+    try:
+        n = job_sollecito_punteggio_torneo(db_bun)
+        if n:
+            print(f"[BUNKER][PUNTEGGIO] Sollecitati {n} giocatori.")
+    finally:
+        db_bun.close()
+
+
+def job_bunker_finalizza_punteggi():
+    """Quando tutti hanno risposto (o è scaduto il tempo massimo), aggiorna la classifica e la invia."""
+    from app.bunker.database import SessionLocalBUN
+    from app.bunker.motore_torneo import job_finalizza_punteggi_torneo
+    db_bun = SessionLocalBUN()
+    try:
+        n = job_finalizza_punteggi_torneo(db_bun)
+        if n:
+            print(f"[BUNKER][CLASSIFICA] Finalizzati {n} tornei.")
+    finally:
+        db_bun.close()
 
 
 def job_controllo_timeout():
@@ -1016,6 +1173,54 @@ def avvia_scheduler():
         minutes=15,
         id="brangi_finalizza_punteggi",
     )
+    scheduler.add_job(
+        job_bunker_genera_tornei_futuri,
+        "interval",
+        hours=1,
+        id="bunker_genera_tornei_futuri",
+    )
+    scheduler.add_job(
+        job_bunker_richieste_iscrizione,
+        "interval",
+        minutes=15,
+        id="bunker_richieste_iscrizione",
+    )
+    scheduler.add_job(
+        job_bunker_solleciti_iscrizione,
+        "interval",
+        minutes=15,
+        id="bunker_solleciti_iscrizione",
+    )
+    scheduler.add_job(
+        job_bunker_forma_gruppi,
+        "interval",
+        minutes=15,
+        id="bunker_forma_gruppi",
+    )
+    scheduler.add_job(
+        job_bunker_promozioni_scadute,
+        "interval",
+        minutes=5,
+        id="bunker_promozioni_scadute",
+    )
+    scheduler.add_job(
+        job_bunker_richiesta_punteggio,
+        "interval",
+        minutes=15,
+        id="bunker_richiesta_punteggio",
+    )
+    scheduler.add_job(
+        job_bunker_sollecito_punteggio,
+        "interval",
+        minutes=15,
+        id="bunker_sollecito_punteggio",
+    )
+    scheduler.add_job(
+        job_bunker_finalizza_punteggi,
+        "interval",
+        minutes=15,
+        id="bunker_finalizza_punteggi",
+    )
     scheduler.start()
 
 
@@ -1207,6 +1412,28 @@ def crea_tabelle_brangi():
     BaseBRG.metadata.create_all(bind=engine_brg)
 
     return {"ok": True, "messaggio": "Tabelle Brangi create/aggiornate (o già a posto)."}
+
+
+@app.get("/admin/bunker/crea-tabelle", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def crea_tabelle_bunker():
+    """
+    Crea le tabelle del database Bunker, se non esistono già.
+
+    A differenza dell'equivalente Palavillage qui sopra, non servono le
+    migrazioni storiche (ALTER TABLE ... ADD COLUMN IF NOT EXISTS)
+    accumulate nel tempo: Bunker parte da un database vuoto e lo
+    schema attuale di app/bunker/models.py È GIÀ quello definitivo,
+    quindi basta create_all. Se in futuro si aggiungeranno colonne ai
+    modelli DOPO che Bunker è già in produzione, andranno aggiunte
+    qui le stesse identiche righe "ALTER TABLE ... ADD COLUMN IF NOT
+    EXISTS" viste sopra per Palavillage (stesso pattern da riusare).
+    """
+    from app.bunker.database import engine_bun, BaseBUN
+    from app.bunker import models as _modelli_bun  # noqa: F401 (registra le tabelle)
+
+    BaseBUN.metadata.create_all(bind=engine_bun)
+
+    return {"ok": True, "messaggio": "Tabelle Bunker create/aggiornate (o già a posto)."}
 
 
 @app.get("/admin/palavillage/campionati", dependencies=[Depends(verifica_credenziali_admin_palavillage_qualsiasi)])
@@ -2378,6 +2605,416 @@ def pagina_admin_brangi():
     percorso = os.path.join(os.path.dirname(__file__), "static", "admin_brangi.html")
     return FileResponse(percorso)
 
+
+@app.get("/admin/bunker/campionati", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def elenca_campionati_bunker(db_bun: Session = Depends(get_db_bun)):
+    """
+    Elenco dei campionati Bunker, con il loro nome attuale (o quello
+    di riserva se non ancora assegnato). Garantisce prima che tutti gli
+    slot (1..NUMERO_CAMPIONATI) esistano già come campionato APERTO,
+    così aprendo il pannello li vedi subito anche se lo scheduler non è
+    ancora passato a crearli.
+    """
+    from app.bunker.models import Campionato
+    from app.bunker.pdf_torneo import _nome_campionato_leggibile
+    from app.bunker.motore_torneo import assicura_slot_campionati_esistano
+
+    assicura_slot_campionati_esistano(db_bun)
+
+    campionati = db_bun.query(Campionato).order_by(Campionato.slot, Campionato.numero_edizione).all()
+    return [
+        {
+            "id": c.id,
+            "slot": c.slot,
+            "giorno_settimana": c.giorno_settimana,
+            "numero_edizione": c.numero_edizione,
+            "nome": c.nome,
+            "nome_visualizzato": _nome_campionato_leggibile(c),
+            "orario_inizio": c.orario_inizio,
+            "orario_fine": c.orario_fine,
+            "pubblicato": c.pubblicato,
+            "stato": c.stato,
+        }
+        for c in campionati
+    ]
+
+
+@app.post("/admin/bunker/campionati/{campionato_id}/nome", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def rinomina_campionato_bunker(campionato_id: int, dati: dict, db_bun: Session = Depends(get_db_bun)):
+    """
+    Assegna (o cambia) il nome identificativo di un campionato, il suo
+    giorno della settimana (0=lunedì...6=domenica - ora libero, non più
+    l'identità del campionato: quella è lo slot) e facoltativamente
+    l'orario del torneo (es. "12:00" - "13:30"). L'orario, se impostato,
+    viene usato sia nei messaggi WhatsApp di convocazione sia nel report
+    mensile, al posto dell'orario unico di riserva (ORA_INIZIO_TORNEO in
+    config.py).
+    """
+    import re
+    from app.bunker.models import Campionato
+
+    def _valida_orario(valore):
+        valore = (valore or "").strip() or None
+        if valore is not None and not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", valore):
+            raise HTTPException(status_code=400, detail=f"Orario '{valore}' non valido, usa il formato HH:MM (es. 12:00)")
+        return valore
+
+    nuovo_nome = (dati.get("nome") or "").strip() or None
+    nuovo_orario_inizio = _valida_orario(dati.get("orario_inizio"))
+    nuovo_orario_fine = _valida_orario(dati.get("orario_fine"))
+
+    nuovo_giorno = dati.get("giorno_settimana")
+    if nuovo_giorno is not None:
+        try:
+            nuovo_giorno = int(nuovo_giorno)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Giorno della settimana non valido")
+        if not (0 <= nuovo_giorno <= 6):
+            raise HTTPException(status_code=400, detail="Giorno della settimana deve essere tra 0 (lunedì) e 6 (domenica)")
+
+    campionato = db_bun.query(Campionato).filter(Campionato.id == campionato_id).first()
+    if campionato is None:
+        raise HTTPException(status_code=404, detail="Campionato non trovato")
+
+    campionato.nome = nuovo_nome
+    campionato.orario_inizio = nuovo_orario_inizio
+    campionato.orario_fine = nuovo_orario_fine
+    if nuovo_giorno is not None:
+        campionato.giorno_settimana = nuovo_giorno
+    if "pubblicato" in dati:
+        campionato.pubblicato = bool(dati.get("pubblicato"))
+    db_bun.commit()
+    return {
+        "ok": True, "id": campionato.id, "nome": campionato.nome, "giorno_settimana": campionato.giorno_settimana,
+        "orario_inizio": campionato.orario_inizio, "orario_fine": campionato.orario_fine, "pubblicato": campionato.pubblicato,
+    }
+
+
+@app.get("/admin/bunker/campionati/{campionato_id}/classifica", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def classifica_campionato_bunker(campionato_id: int, db_bun: Session = Depends(get_db_bun)):
+    """Classifica attuale di un campionato, dal punteggio più alto al più basso."""
+    from app.bunker.models import Campionato, ClassificaVoce, UtenteBUN
+
+    campionato = db_bun.query(Campionato).filter(Campionato.id == campionato_id).first()
+    if campionato is None:
+        raise HTTPException(status_code=404, detail="Campionato non trovato")
+
+    voci = (
+        db_bun.query(ClassificaVoce)
+        .filter(ClassificaVoce.campionato_id == campionato_id)
+        .order_by(ClassificaVoce.punti_totali.desc())
+        .all()
+    )
+    risultato = []
+    for posizione, voce in enumerate(voci, start=1):
+        utente = db_bun.query(UtenteBUN).filter(UtenteBUN.id == voce.utente_id).first()
+        if utente is None:
+            continue
+        risultato.append({
+            "posizione": posizione,
+            "utente_id": utente.id,
+            "nome": utente.nome,
+            "cognome": utente.cognome,
+            "punti_totali": voce.punti_totali,
+            "partite_giocate": voce.partite_giocate,
+        })
+    return {"campionato_id": campionato_id, "stato": campionato.stato, "classifica": risultato}
+
+
+@app.post("/admin/bunker/campionati/{campionato_id}/chiudi", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def chiudi_campionato_bunker(campionato_id: int, db_bun: Session = Depends(get_db_bun)):
+    """
+    Chiude un'edizione del campionato: congela la classifica (per
+    premiare il vincitore), registra chi ha vinto. La prossima volta che
+    lo scheduler genera i tornei futuri per questo giorno della
+    settimana, trovando nessun campionato APERTO ne crea automaticamente
+    uno nuovo (numero_edizione+1) - nessun'altra azione manuale richiesta.
+    """
+    from app.bunker.models import Campionato, ClassificaVoce
+
+    campionato = db_bun.query(Campionato).filter(Campionato.id == campionato_id).first()
+    if campionato is None:
+        raise HTTPException(status_code=404, detail="Campionato non trovato")
+    if campionato.stato == "CHIUSO":
+        raise HTTPException(status_code=400, detail="Questo campionato è già chiuso")
+
+    primo_classificato = (
+        db_bun.query(ClassificaVoce)
+        .filter(ClassificaVoce.campionato_id == campionato_id)
+        .order_by(ClassificaVoce.punti_totali.desc())
+        .first()
+    )
+
+    campionato.stato = "CHIUSO"
+    campionato.data_chiusura = datetime.utcnow()
+    campionato.vincitore_utente_id = primo_classificato.utente_id if primo_classificato else None
+    db_bun.commit()
+
+    return {
+        "ok": True,
+        "campionato_id": campionato.id,
+        "vincitore_utente_id": campionato.vincitore_utente_id,
+        "messaggio": "Campionato chiuso. Una nuova edizione verrà aperta automaticamente al prossimo torneo generato per questo giorno.",
+    }
+
+
+@app.get("/admin/bunker/tornei", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def elenca_tornei_bunker(db_bun: Session = Depends(get_db_bun)):
+    """
+    Elenco dei tornei (passati recenti + tutti i futuri già generati),
+    per il pannello admin: data/giorno, stato, numero di confermati
+    (per QUELLA tappa), numero di iscritti (al campionato della tappa:
+    utenti ATTIVI col bit dello slot nel campionati_bitmask, stesso
+    criterio usato da invia_richieste_iscrizione per scegliere a chi
+    scrivere) ed eventuali gruppi con un posto vacante.
+    """
+    from app.bunker.models import Torneo, IscrizioneTorneo, Campionato, GruppoBUN, GruppoMembroBUN, UtenteBUN
+    from app.bunker.pdf_torneo import _nome_campionato_leggibile
+    from datetime import date as _date, timedelta as _timedelta
+
+    oggi = _date.today()
+    tornei = (
+        db_bun.query(Torneo)
+        .filter(Torneo.data >= oggi - _timedelta(days=7))
+        .order_by(Torneo.data)
+        .all()
+    )
+
+    nomi_giorni = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+    etichette_stato = {
+        "PROGRAMMATO": "Programmato",
+        "RICHIESTE_INVIATE": "Richieste inviate",
+        "SOLLECITO_INVIATO": "Sollecito inviato",
+        "GRUPPI_FORMATI": "Gruppi formati",
+        "PDF_INVIATI": "PDF inviati alla segreteria",
+        "RICHIESTA_PUNTEGGIO_INVIATA": "In attesa punteggi",
+        "TERMINATO": "Terminato",
+        "ANNULLATO": "Annullato",
+    }
+
+    iscritti_per_slot = {}  # cache: lo stesso slot compare in più tappe
+
+    risultato = []
+    for torneo in tornei:
+        campionato = db_bun.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+        # Confermati: con nome e cognome, per il riquadro al passaggio del
+        # mouse nel pannello. Le riserve (rimaste fuori dai gruppi) sono
+        # segnalate a parte.
+        righe_confermati = (
+            db_bun.query(UtenteBUN.nome, UtenteBUN.cognome, IscrizioneTorneo.ruolo)
+            .join(IscrizioneTorneo, IscrizioneTorneo.utente_id == UtenteBUN.id)
+            .filter(IscrizioneTorneo.torneo_id == torneo.id, IscrizioneTorneo.stato_risposta == "CONFERMATO")
+            .all()
+        )
+        nomi_confermati = sorted(
+            (
+                f"{nome} {cognome}" + (" (riserva)" if (ruolo or "").startswith("RISERVA") else "")
+                for nome, cognome, ruolo in righe_confermati
+            ),
+            key=str.lower,
+        )
+        numero_confermati = len(nomi_confermati)
+
+        numero_iscritti = None
+        nomi_iscritti = []
+        if campionato:
+            if campionato.slot not in iscritti_per_slot:
+                bit_slot = 1 << (campionato.slot - 1)
+                iscritti_per_slot[campionato.slot] = sorted(
+                    (
+                        f"{nome} {cognome}"
+                        for nome, cognome in db_bun.query(UtenteBUN.nome, UtenteBUN.cognome)
+                        .filter(
+                            UtenteBUN.stato_account == "ATTIVO",
+                            UtenteBUN.campionati_bitmask.op("&")(bit_slot) == bit_slot,
+                        )
+                        .all()
+                    ),
+                    key=str.lower,
+                )
+            nomi_iscritti = iscritti_per_slot[campionato.slot]
+            numero_iscritti = len(nomi_iscritti)
+
+        gruppi = db_bun.query(GruppoBUN).filter(GruppoBUN.torneo_id == torneo.id).all()
+        vacanza = False
+        for gruppo in gruppi:
+            n_membri = db_bun.query(GruppoMembroBUN).filter(GruppoMembroBUN.gruppo_id == gruppo.id).count()
+            if n_membri < 4:
+                vacanza = True
+                break
+
+        risultato.append({
+            "id": torneo.id,
+            "data": torneo.data.isoformat(),
+            "giorno_leggibile": nomi_giorni[torneo.giorno_settimana],
+            "stato": torneo.stato,
+            "stato_leggibile": etichette_stato.get(torneo.stato, torneo.stato),
+            "numero_confermati": numero_confermati,
+            "numero_iscritti": numero_iscritti,
+            "nomi_confermati": nomi_confermati,
+            "nomi_iscritti": nomi_iscritti,
+            "attivo": torneo.attivo,
+            "cancellabile": torneo.stato in {"PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"} and torneo.attivo,
+            "vacanza_senza_riserve": vacanza,
+            "campionato_nome": _nome_campionato_leggibile(campionato) if campionato else None,
+        })
+
+    return risultato
+
+
+@app.post("/admin/bunker/tornei/{torneo_id}/attiva", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def attiva_torneo_bunker(torneo_id: int, db_bun: Session = Depends(get_db_bun)):
+    from app.bunker.motore_torneo import attiva_torneo
+    risultato = attiva_torneo(db_bun, torneo_id)
+    if not risultato.get("ok"):
+        raise HTTPException(status_code=404, detail=risultato.get("motivo"))
+    return risultato
+
+
+@app.post("/admin/bunker/tornei/{torneo_id}/cancella", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def cancella_torneo_bunker(torneo_id: int, db_bun: Session = Depends(get_db_bun)):
+    from app.bunker.motore_torneo import cancella_torneo
+    risultato = cancella_torneo(db_bun, torneo_id)
+    if not risultato.get("ok"):
+        motivo = risultato.get("motivo")
+        messaggio = (
+            "Questo torneo ha già i gruppi formati: non è più cancellabile."
+            if motivo == "non_cancellabile_gruppi_gia_formati" else "Torneo non trovato"
+        )
+        raise HTTPException(status_code=400, detail=messaggio)
+    return risultato
+
+
+@app.post("/admin/bunker/forza-genera-tornei", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def forza_genera_tornei_bunker(db_bun: Session = Depends(get_db_bun)):
+    """
+    Forza subito la generazione dei prossimi tornei (normalmente gira da
+    sola ogni ora) - utile appena configuri o cambi i campionati, per
+    non dover aspettare fino a un'ora prima di vedere comparire i primi
+    tornei nella tabella.
+    """
+    from app.bunker.motore_torneo import genera_tornei_futuri
+    n = genera_tornei_futuri(db_bun)
+    return {"ok": True, "tornei_creati": n}
+
+
+@app.post("/admin/bunker/tornei/{torneo_id}/forza-richieste", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def forza_richieste_iscrizione_bunker(torneo_id: int, db_bun: Session = Depends(get_db_bun)):
+    """
+    Forza subito l'invio delle richieste di iscrizione per UN torneo
+    specifico, saltando l'attesa dei giorni veri (T-6gg). Utile per
+    testare il ciclo completo senza aspettare, o per dare manualmente
+    una spinta se qualcosa non fosse partito da solo. Non fa nulla se il
+    torneo non è più nello stato PROGRAMMATO (es. già elaborato).
+    """
+    from app.bunker.motore_torneo import job_invia_richieste_iscrizione
+    n = job_invia_richieste_iscrizione(db_bun, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
+@app.post("/admin/bunker/tornei/{torneo_id}/forza-solleciti", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def forza_solleciti_iscrizione_bunker(torneo_id: int, db_bun: Session = Depends(get_db_bun)):
+    """Forza subito il sollecito iscrizione per un torneo specifico (richiede che le richieste iniziali siano già state mandate)."""
+    from app.bunker.motore_torneo import job_invia_solleciti_iscrizione
+    n = job_invia_solleciti_iscrizione(db_bun, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
+@app.post("/admin/bunker/tornei/{torneo_id}/forza-formazione-gruppi", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def forza_formazione_gruppi_bunker(torneo_id: int, db_bun: Session = Depends(get_db_bun)):
+    """Forza subito la formazione gruppi per un torneo specifico (richiede che sia già passato dal sollecito)."""
+    from app.bunker.motore_torneo import job_forma_gruppi_torneo
+    n = job_forma_gruppi_torneo(db_bun, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
+@app.post("/admin/bunker/tornei/{torneo_id}/forza-richiesta-punteggio", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def forza_richiesta_punteggio_bunker(torneo_id: int, db_bun: Session = Depends(get_db_bun)):
+    """Forza subito la richiesta punteggio per un torneo specifico (richiede che i gruppi siano già stati formati)."""
+    from app.bunker.motore_torneo import job_richiedi_punteggio_torneo
+    n = job_richiedi_punteggio_torneo(db_bun, torneo_id_specifico=torneo_id, ignora_soglia_tempo=True)
+    return {"ok": True, "tornei_elaborati": n}
+
+
+@app.get("/bunker/campionati/pubblico")
+def elenco_campionati_pubblico_bunker(db_bun: Session = Depends(get_db_bun)):
+    """
+    Endpoint pubblico (nessuna credenziale: sono solo nomi e orari dei
+    campionati, non dati sensibili), usato dalla homepage per mostrare i
+    bottoni di iscrizione con il nome e l'orario VERI impostati
+    dall'admin - non più giorni fissi scritti a mano nel frontend.
+    Garantisce anche che tutti gli slot esistano già, per sicurezza.
+    """
+    from app.bunker.models import Campionato
+    from app.bunker.pdf_torneo import _nome_campionato_leggibile
+    from app.bunker.motore_torneo import assicura_slot_campionati_esistano, _NOMI_GIORNI_LEGGIBILI
+
+    assicura_slot_campionati_esistano(db_bun)
+
+    campionati = (
+        db_bun.query(Campionato)
+        .filter(Campionato.stato == "APERTO", Campionato.pubblicato == True)  # noqa: E712
+        .order_by(Campionato.slot)
+        .all()
+    )
+    return [
+        {
+            "slot": c.slot,
+            "nome_visualizzato": _nome_campionato_leggibile(c),
+            "giorno_settimana": c.giorno_settimana,
+            "giorno_leggibile": _NOMI_GIORNI_LEGGIBILI[c.giorno_settimana].capitalize(),
+            "orario_inizio": c.orario_inizio,
+            "orario_fine": c.orario_fine,
+        }
+        for c in campionati
+    ]
+
+
+@app.get("/bunker/classifica/{campionato_id}")
+def scarica_classifica_bunker_pdf(campionato_id: int, db_bun: Session = Depends(get_db_bun)):
+    """
+    Pagina pubblica (nessuna credenziale: è solo una classifica, non un
+    dato sensibile), raggiunta dal link mandato su WhatsApp dopo ogni
+    torneo. Il PDF viene rigenerato al volo ad ogni richiesta - sempre
+    aggiornato, senza bisogno di salvare/aggiornare un file da qualche
+    parte.
+
+    Niente ".pdf" nell'indirizzo: il bottone Call to Action su Twilio
+    vuole la variabile come ULTIMA parte dell'URL, senza testo fisso
+    dopo (un ".pdf" in coda ha fatto rifiutare il template ancora prima
+    di arrivare a Meta). Il file arriva comunque correttamente come PDF
+    grazie all'intestazione Content-Disposition qui sotto, che gli dà
+    anche un nome file con estensione corretta per chi lo scarica.
+    """
+    from app.bunker.pdf_classifica import genera_pdf_classifica
+
+    pdf_bytes = genera_pdf_classifica(db_bun, campionato_id)
+    if pdf_bytes is None:
+        raise HTTPException(status_code=404, detail="Classifica non trovata (campionato inesistente o nessuna tappa ancora giocata)")
+
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="classifica_bunker_{campionato_id}.pdf"'},
+    )
+
+
+@app.get("/admin/bunker/chi-sono", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def chi_sono_admin_bunker(livello: str = Depends(verifica_credenziali_admin_bunker_qualsiasi)):
+    """
+    Dice al pannello (JavaScript) con quali credenziali si è entrati -
+    "completo" o "circolo" - così la pagina può mostrare o nascondere i
+    pulsanti Database/Strumenti/Report, riservati solo a "completo".
+    """
+    return {"livello": livello}
+
+
+@app.get("/admin/bunker", dependencies=[Depends(verifica_credenziali_admin_bunker_qualsiasi)])
+def pagina_admin_bunker():
+    """Serve la pagina web del pannello admin Bunker."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_bunker.html")
+    return FileResponse(percorso)
+
 @app.get("/health/db")
 def health_check_database(db: Session = Depends(get_db)):
     """
@@ -2483,6 +3120,7 @@ def _carica_iscrizione_pv_da_token(token: str, db_pv: Session):
 CIRCOLI_ALTERNATIVI_RISPONDI = [
     ("padelcity", "app.padelcity.database", "SessionLocalPC", "_carica_iscrizione_pc_da_token"),
     ("brangi", "app.brangi.database", "SessionLocalBRG", "_carica_iscrizione_brg_da_token"),
+    ("bunker", "app.bunker.database", "SessionLocalBUN", "_carica_iscrizione_bun_da_token"),
 ]
 
 
@@ -3141,6 +3779,243 @@ async def gestisci_risposta_iscrizione_brangi(token: str, request: Request, db_b
             f"Ti scriverò su WhatsApp un promemoria {ORE_FORMAZIONE_GRUPPI_PRIMA} ore prima con tutti i dettagli "
             f"del tuo gruppo. Un saluto da Anna.</p>"
             f"<img src='/pubblico/anna_brangi_icona.png' alt='Anna' class='foto-anna'>"
+        )
+    else:
+        corpo = f"<p class='esito ok'>Ok, ho segnato che non ci sarai {giorno_leggibile} {data_leggibile}. A presto!</p>"
+    return _pagina_conferma_circolo_html("Risposta registrata", corpo)
+
+
+@app.get("/bunker/utenti/profilo")
+def profilo_utente_bunker(whatsapp_numero: str, db_bun: Session = Depends(get_db_bun), db: Session = Depends(get_db)):
+    """
+    Equivalente di /utenti/profilo ma per Bunker: cerca l'utente
+    prima nel SUO database, poi (se non trovato) anche in quello
+    generico, per precompilare comunque nome/cognome/livello.
+    """
+    from app.bunker.servizio_iscrizione import profilo_bun
+    return profilo_bun(db_bun, db, whatsapp_numero)
+
+
+@app.post("/bunker/iscrizione", response_model=bunker_schemas.IscrizioneBUNResponse)
+def crea_iscrizione_bunker(
+    dati: bunker_schemas.IscrizioneBUNCreate,
+    db_bun: Session = Depends(get_db_bun),
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint del form pubblico di Bunker. A differenza di
+    /richieste (sistema generico), qui non c'è "una richiesta per
+    giorno": si registrano semplicemente le mattine settimanali in cui
+    si vuole giocare, sempre modificabili.
+
+    Se il numero risulta già validato sul sistema generico AnnaPadel
+    (stesso numero, stessa Anna), l'OTP viene saltato qui.
+    """
+    from app.bunker.servizio_iscrizione import gestisci_iscrizione
+
+    try:
+        risultato = gestisci_iscrizione(db_bun, db, dati)
+    except ValueError as errore:
+        raise HTTPException(status_code=400, detail=str(errore))
+    except RuntimeError:
+        raise HTTPException(
+            status_code=503,
+            detail="Il servizio WhatsApp è temporaneamente al completo (troppe nuove "
+                   "richieste oggi). Riprova tra qualche ora."
+        )
+    return bunker_schemas.IscrizioneBUNResponse(**risultato)
+
+
+@app.post("/bunker/iscrizione/valida-otp")
+def valida_otp_bunker(dati: bunker_schemas.ValidaOtpBUNRequest, db_bun: Session = Depends(get_db_bun)):
+    """Equivalente di /richieste/valida-otp ma per Bunker."""
+    from app.bunker.servizio_iscrizione import valida_otp_bun
+
+    try:
+        return valida_otp_bun(db_bun, dati.whatsapp_numero, dati.codice_otp)
+    except LookupError as errore:
+        raise HTTPException(status_code=404, detail=str(errore))
+    except ValueError as errore:
+        raise HTTPException(status_code=400, detail=str(errore))
+
+
+def _carica_iscrizione_bun_da_token(token: str, db_bun: Session):
+    """
+    Stesso schema di _carica_gruppo_da_token (sistema generico): divide
+    il token in id + codice casuale, verifica che corrispondano - fa da
+    chiave d'accesso al posto di una password, dato che questa pagina
+    la apre l'utente direttamente da un link WhatsApp, senza login.
+    """
+    from app.bunker.models import IscrizioneTorneo, Torneo, UtenteBUN
+    try:
+        iscrizione_id_str, codice = token.rsplit(".", 1)
+        iscrizione_id = int(iscrizione_id_str)
+    except (ValueError, IndexError):
+        return None, None, None
+
+    iscrizione = db_bun.query(IscrizioneTorneo).filter(IscrizioneTorneo.id == iscrizione_id).first()
+    if iscrizione is None or iscrizione.codice_risposta != codice:
+        return None, None, None
+
+    torneo = db_bun.query(Torneo).filter(Torneo.id == iscrizione.torneo_id).first()
+    utente = db_bun.query(UtenteBUN).filter(UtenteBUN.id == iscrizione.utente_id).first()
+    return iscrizione, torneo, utente
+
+
+@app.get("/bunker/rispondi/{token}")
+def pagina_rispondi_iscrizione_bunker(token: str, db_bun: Session = Depends(get_db_bun)):
+    """
+    Pagina pubblica (nessuna credenziale, come /circolo/conferma/{token})
+    raggiungibile dal link mandato su WhatsApp: gestisce 3 situazioni
+    diverse a seconda dello stato dell'iscrizione:
+    1. IN_ATTESA -> conferma/rifiuto iniziale
+    2. CONFERMATO + gruppi già formati -> possibilità di cancellare
+       all'ultimo momento (imprevisto)
+    3. Proposta di promozione riserva attiva -> conferma/rifiuto con
+       scadenza
+    In ogni altro caso, mostra semplicemente l'esito già registrato.
+    """
+    from zoneinfo import ZoneInfo
+    adesso_italia = datetime.now(ZoneInfo("Europe/Rome")).replace(tzinfo=None)
+    iscrizione, torneo, utente = _carica_iscrizione_bun_da_token(token, db_bun)
+    if iscrizione is None:
+        return _pagina_conferma_circolo_html(
+            "Link non valido",
+            "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
+        )
+
+    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"][torneo.giorno_settimana]
+    data_leggibile = torneo.data.strftime("%d/%m/%Y")
+
+    from app.bunker.models import Campionato
+    from app.bunker.pdf_torneo import _nome_campionato_leggibile
+    from app.bunker.config import NOME_CIRCOLO
+
+    campionato = db_bun.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
+    nome_torneo = _nome_campionato_leggibile(campionato) if campionato else "Torneo"
+    if campionato and campionato.orario_inizio:
+        fascia_oraria = f" — {campionato.orario_inizio}" + (f"-{campionato.orario_fine}" if campionato.orario_fine else "")
+    else:
+        fascia_oraria = ""
+
+    # Caso 3: proposta di promozione riserva attiva e non ancora scaduta
+    if iscrizione.promozione_scadenza is not None and adesso_italia <= iscrizione.promozione_scadenza:
+        corpo = f"""
+            <p class="dettaglio"><strong>Torneo:</strong> {nome_torneo} — {giorno_leggibile} {data_leggibile}{fascia_oraria}</p>
+            <p>Si è liberato un posto: sei dentro! Confermi la tua partecipazione?</p>
+            <form method="POST" action="/bunker/rispondi/{token}">
+                <button type="submit" name="azione" value="conferma_promozione" class="btn-conferma">Sì, ci sarò</button>
+                <button type="submit" name="azione" value="rifiuto_promozione" class="btn-fallita">No, non posso</button>
+            </form>
+        """
+        return _pagina_conferma_circolo_html("Posto disponibile!", corpo)
+
+    # Caso 1: prima risposta, ancora in attesa
+    if iscrizione.stato_risposta == "IN_ATTESA":
+        corpo = f"""
+            <p class="dettaglio"><strong>Torneo:</strong> {nome_torneo} — {giorno_leggibile} {data_leggibile}{fascia_oraria}</p>
+            <p class="dettaglio"><strong>Circolo:</strong> {NOME_CIRCOLO}</p>
+            <form method="POST" action="/bunker/rispondi/{token}">
+                <button type="submit" name="azione" value="conferma" class="btn-conferma">Confermo, ci sarò</button>
+                <button type="submit" name="azione" value="rifiuto" class="btn-fallita">Non posso venire</button>
+            </form>
+        """
+        return _pagina_conferma_circolo_html(f"Torneo di {giorno_leggibile}", corpo)
+
+    # Caso 2: già confermato, gruppi formati, imprevisto dell'ultimo momento
+    if iscrizione.stato_risposta == "CONFERMATO" and iscrizione.ruolo == "TITOLARE" and torneo.stato in ("GRUPPI_FORMATI", "PDF_INVIATI"):
+        corpo = f"""
+            <p class="dettaglio"><strong>Torneo:</strong> {nome_torneo} — {giorno_leggibile} {data_leggibile}{fascia_oraria}</p>
+            <p class="esito ok">✅ Sei confermato/a per questo torneo.</p>
+            <p>Imprevisto dell'ultimo minuto? Puoi ancora annullare - cercherò subito un sostituto.</p>
+            <form method="POST" action="/bunker/rispondi/{token}">
+                <button type="submit" name="azione" value="annulla_tardi" class="btn-fallita">Non posso più venire</button>
+            </form>
+        """
+        return _pagina_conferma_circolo_html(f"Torneo di {giorno_leggibile}", corpo)
+
+    # Altri casi: esito già definitivo, niente da fare
+    messaggi_esito = {
+        "CONFERMATO": "✅ Hai confermato la partecipazione a questo torneo.",
+        "RIFIUTATO": "Hai segnalato la tua assenza per questo torneo.",
+        "RITIRATO_DOPO_GRUPPO": "Hai annullato la tua partecipazione a questo torneo.",
+    }
+    testo_esito = messaggi_esito.get(iscrizione.stato_risposta, "Questa iscrizione è già stata gestita.")
+    corpo_esito = f"<p class='esito ok'>{testo_esito} Non c'è più nulla da fare qui.</p>"
+    if iscrizione.stato_risposta == "CONFERMATO":
+        corpo_esito += "<img src='/pubblico/anna_bunker_icona.png' alt='Anna' class='foto-anna'>"
+    return _pagina_conferma_circolo_html("Già gestito", corpo_esito)
+
+
+@app.post("/bunker/rispondi/{token}")
+async def gestisci_risposta_iscrizione_bunker(token: str, request: Request, db_bun: Session = Depends(get_db_bun)):
+    from app.bunker.motore_torneo import (
+        gestisci_risposta_bottone_iscrizione, richiedi_cancellazione_tardiva, gestisci_risposta_promozione,
+    )
+
+    iscrizione, torneo, utente = _carica_iscrizione_bun_da_token(token, db_bun)
+    if iscrizione is None:
+        return _pagina_conferma_circolo_html(
+            "Link non valido",
+            "<p>Questo link non è valido, o si riferisce a un'iscrizione che non esiste più.</p>",
+        )
+
+    giorno_leggibile = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"][torneo.giorno_settimana]
+    data_leggibile = torneo.data.strftime("%d/%m/%Y")
+
+    corpo_form = await request.form()
+    azione = corpo_form.get("azione")
+
+    if azione in ("conferma_promozione", "rifiuto_promozione"):
+        risultato = gestisci_risposta_promozione(db_bun, iscrizione.id, accettata=(azione == "conferma_promozione"))
+        if risultato.get("esito") == "promossa":
+            corpo = (
+                f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! "
+                f"Controlla WhatsApp per i dettagli del gruppo.</p>"
+                f"<img src='/pubblico/anna_bunker_icona.png' alt='Anna' class='foto-anna'>"
+            )
+        elif not risultato.get("gestito") and risultato.get("motivo") == "proposta_scaduta":
+            corpo = "<p class='esito errore'>Il tempo per confermare questo posto è scaduto, è stato riproposto a qualcun altro.</p>"
+        else:
+            corpo = "<p class='esito ok'>Ok, grazie per aver risposto. Ti terrò comunque in considerazione per la prossima occasione.</p>"
+        return _pagina_conferma_circolo_html("Risposta registrata", corpo)
+
+    if azione == "annulla_tardi":
+        risultato = richiedi_cancellazione_tardiva(db_bun, iscrizione.id)
+        if not risultato.get("gestito"):
+            return _pagina_conferma_circolo_html(
+                "Non gestito",
+                "<p class='esito errore'>Non sono riuscito a registrare l'annullamento, riprova tra poco o scrivimi direttamente su WhatsApp.</p>",
+            )
+        corpo = f"<p class='esito ok'>Ok, ho segnato che non ci sarai {giorno_leggibile} {data_leggibile}. Sto cercando subito un sostituto per il tuo gruppo.</p>"
+        return _pagina_conferma_circolo_html("Annullamento registrato", corpo)
+
+    # Casi originari: prima risposta conferma/rifiuto
+    if iscrizione.stato_risposta != "IN_ATTESA":
+        esito_leggibile = "confermata la partecipazione" if iscrizione.stato_risposta == "CONFERMATO" else "segnalata l'assenza"
+        corpo_gia_risposto = (
+            f"<p class='esito ok'>✅ Hai già {esito_leggibile} per il torneo di {giorno_leggibile} {data_leggibile} "
+            f"(magari da un altro dispositivo), non c'è più nulla da fare qui.</p>"
+        )
+        if iscrizione.stato_risposta == "CONFERMATO":
+            corpo_gia_risposto += "<img src='/pubblico/anna_bunker_icona.png' alt='Anna' class='foto-anna'>"
+        return _pagina_conferma_circolo_html("Già risposto", corpo_gia_risposto)
+
+    confermato = azione == "conferma"
+    risultato = gestisci_risposta_bottone_iscrizione(db_bun, iscrizione.id, confermato=confermato)
+    if not risultato.get("gestito"):
+        return _pagina_conferma_circolo_html(
+            "Non gestito",
+            "<p class='esito errore'>Non sono riuscito a registrare la tua risposta, riprova tra poco.</p>",
+        )
+
+    if confermato:
+        from app.bunker.config import ORE_FORMAZIONE_GRUPPI_PRIMA
+        corpo = (
+            f"<p class='esito ok'>✅ Perfetto, sei confermato/a per {giorno_leggibile} {data_leggibile}! "
+            f"Ti scriverò su WhatsApp un promemoria {ORE_FORMAZIONE_GRUPPI_PRIMA} ore prima con tutti i dettagli "
+            f"del tuo gruppo. Un saluto da Anna.</p>"
+            f"<img src='/pubblico/anna_bunker_icona.png' alt='Anna' class='foto-anna'>"
         )
     else:
         corpo = f"<p class='esito ok'>Ok, ho segnato che non ci sarai {giorno_leggibile} {data_leggibile}. A presto!</p>"
@@ -3940,7 +4815,7 @@ def rispondi_a_proposta(gruppo_id: int, dati: schemas.RispostaGruppo, db: Sessio
 
 
 @app.post("/webhooks/twilio/incoming")
-async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db), db_pv: Session = Depends(get_db_pv), db_pc: Session = Depends(get_db_pc), db_brg: Session = Depends(get_db_brg)):
+async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db), db_pv: Session = Depends(get_db_pv), db_pc: Session = Depends(get_db_pc), db_brg: Session = Depends(get_db_brg), db_bun: Session = Depends(get_db_bun)):
     """
     Riceve i messaggi in arrivo su WhatsApp (es. quando un utente preme
     il bottone Conferma o Rifiuta su una proposta di partita). Va
@@ -3954,7 +4829,7 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
     testare l'endpoint in locale senza credenziali reali).
 
     Stesso numero, PIÙ sistemi: prima di qualunque cosa, si controlla se
-    il messaggio è di competenza di Palavillage, di PadelCity o di Brangi
+    il messaggio è di competenza di Palavillage, di PadelCity, di Brangi o di Bunker
     (bottone con payload prefissato, o testo libero con un contesto
     attivo di uno dei circoli, controllati in quest'ordine). Se sì, viene gestito lì e la funzione si ferma.
     Altrimenti prosegue ESATTAMENTE come prima, senza alcuna modifica al
@@ -3992,6 +4867,9 @@ async def webhook_twilio_incoming(request: Request, db: Session = Depends(get_db
         return Response(content="<Response></Response>", media_type="application/xml")
 
     if gestisci_webhook_brangi(db_brg, numero_mittente, dati):
+        return Response(content="<Response></Response>", media_type="application/xml")
+
+    if gestisci_webhook_bunker(db_bun, numero_mittente, dati):
         return Response(content="<Response></Response>", media_type="application/xml")
 
     try:
@@ -5356,6 +6234,200 @@ def pagina_admin_database_brangi():
     """Serve la pagina web del pannello database Brangi."""
     import os
     percorso = os.path.join(os.path.dirname(__file__), "static", "admin_database_brangi.html")
+    return FileResponse(percorso)
+
+
+# =====================================================================
+# STESSO IDENTICO PANNELLO DATABASE GENERICO, MA PER BUNKER: usa il
+# SUO database (get_db_bun, non get_db) e le SUE credenziali admin
+# (verifica_credenziali_admin_bunker) - riusa le stesse funzioni di
+# supporto generiche (_chiavi_primarie_tabella, _riga_a_dict_generico,
+# _converti_valore_per_colonna).
+# =====================================================================
+
+TABELLE_DB_BUNKER = {
+    "utenti_bun": bunker_models.UtenteBUN,
+    "campionati": bunker_models.Campionato,
+    "tornei": bunker_models.Torneo,
+    "iscrizioni_torneo": bunker_models.IscrizioneTorneo,
+    "gruppi_bun": bunker_models.GruppoBUN,
+    "gruppi_membri_bun": bunker_models.GruppoMembroBUN,
+    "classifica_voci": bunker_models.ClassificaVoce,
+    "contesto_attivo_whatsapp": bunker_models.ContestoAttivoWhatsApp,
+}
+
+
+@app.get("/admin/bunker/db/tabelle", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def lista_tabelle_db_bunker():
+    """Elenco dei nomi di tutte le tabelle Bunker gestibili da questo pannello."""
+    return sorted(TABELLE_DB_BUNKER.keys())
+
+
+@app.get("/admin/bunker/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def leggi_tabella_db_bunker(nome_tabella: str, db_bun: Session = Depends(get_db_bun)):
+    """Restituisce tutte le righe di una tabella Bunker, con nomi colonne e chiavi primarie."""
+    modello = TABELLE_DB_BUNKER.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    righe = db_bun.query(modello).all()
+    return {
+        "colonne": [c.name for c in modello.__table__.columns],
+        "chiavi_primarie": _chiavi_primarie_tabella(modello),
+        "righe": [_riga_a_dict_generico(r) for r in righe],
+    }
+
+
+@app.put("/admin/bunker/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def modifica_riga_db_bunker(nome_tabella: str, dati: dict, db_bun: Session = Depends(get_db_bun)):
+    """Modifica una riga di una tabella Bunker (stessa logica del pannello generico)."""
+    modello = TABELLE_DB_BUNKER.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    chiavi_primarie = _chiavi_primarie_tabella(modello)
+    chiavi_originali = dati.pop("_chiavi_originali", {})
+
+    query = db_bun.query(modello)
+    for chiave in chiavi_primarie:
+        query = query.filter(getattr(modello, chiave) == chiavi_originali.get(chiave))
+    riga = query.first()
+    if riga is None:
+        raise HTTPException(status_code=404, detail="Riga non trovata")
+
+    colonne_per_nome = {c.name: c for c in modello.__table__.columns}
+    for nome_campo, valore in dati.items():
+        if nome_campo not in colonne_per_nome:
+            continue
+        try:
+            setattr(riga, nome_campo, _converti_valore_per_colonna(colonne_per_nome[nome_campo], valore))
+        except (ValueError, TypeError) as errore:
+            raise HTTPException(status_code=400, detail=f"Valore non valido per '{nome_campo}': {errore}")
+
+    try:
+        db_bun.commit()
+    except IntegrityError as errore:
+        db_bun.rollback()
+        raise HTTPException(status_code=409, detail=f"Modifica non consentita dal database: {errore.orig}")
+
+    return {"messaggio": "Riga modificata con successo."}
+
+
+@app.delete("/admin/bunker/db/tabelle/{nome_tabella}", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def elimina_riga_db_bunker(nome_tabella: str, chiavi: dict, db_bun: Session = Depends(get_db_bun)):
+    """Elimina una riga di una tabella Bunker, identificata dalle sue chiavi primarie."""
+    modello = TABELLE_DB_BUNKER.get(nome_tabella)
+    if modello is None:
+        raise HTTPException(status_code=404, detail="Tabella non trovata")
+
+    chiavi_primarie = _chiavi_primarie_tabella(modello)
+    query = db_bun.query(modello)
+    for chiave in chiavi_primarie:
+        query = query.filter(getattr(modello, chiave) == chiavi.get(chiave))
+    riga = query.first()
+    if riga is None:
+        raise HTTPException(status_code=404, detail="Riga non trovata")
+
+    try:
+        db_bun.delete(riga)
+        db_bun.commit()
+    except IntegrityError as errore:
+        db_bun.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"Impossibile eliminare: questa riga è collegata ad altri dati ({errore.orig})"
+        )
+
+    return {"messaggio": "Riga eliminata con successo."}
+
+
+@app.post("/admin/bunker/utenti/aggiungi", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def aggiungi_utente_manuale_bunker(
+    dati: bunker_schemas.UtenteManualeBUNCreate,
+    db_bun: Session = Depends(get_db_bun),
+    db: Session = Depends(get_db),
+):
+    """
+    Inserimento manuale di un giocatore dal pannello database (bottone
+    "Aggiungi utente" sulla tabella utenti_bun). Nessun messaggio
+    WhatsApp viene inviato. Vedi crea_utente_manuale_bun.
+    """
+    from app.bunker.servizio_iscrizione import crea_utente_manuale_bun
+
+    try:
+        utente = crea_utente_manuale_bun(db_bun, db, dati)
+    except LookupError as errore:
+        raise HTTPException(status_code=409, detail=str(errore))
+    except ValueError as errore:
+        raise HTTPException(status_code=400, detail=str(errore))
+    except IntegrityError as errore:
+        db_bun.rollback()
+        raise HTTPException(status_code=409, detail=f"Inserimento non consentito dal database: {errore.orig}")
+
+    return {"messaggio": f"Utente {utente.nome} {utente.cognome} aggiunto ({utente.whatsapp_numero}).", "id": utente.id}
+
+
+@app.get("/admin/bunker/debug-config", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def debug_config_bunker():
+    """
+    Endpoint diagnostico: mostra i valori REALI che il processo in
+    esecuzione in questo momento sta usando per le variabili
+    d'ambiente più delicate - utile per scoprire se una variabile
+    settata su Railway non sta arrivando davvero al codice (typo nel
+    nome, servizio sbagliato, deploy non applicato, ecc.) invece di
+    continuare a indovinare.
+    """
+    import os
+    from app.bunker import config as config_bun
+
+    return {
+        "PADEL_BACKEND_URL_variabile_ambiente_grezza": os.getenv("PADEL_BACKEND_URL"),
+        "URL_BASE_BACKEND_PUBBLICO_usato_dal_codice": config_bun.URL_BASE_BACKEND_PUBBLICO,
+        "nota": (
+            "Se il primo campo è null, la variabile PADEL_BACKEND_URL non sta "
+            "arrivando affatto a questo processo (nome sbagliato, servizio "
+            "sbagliato, o deploy non ancora applicato). Se invece il primo "
+            "campo ha il valore giusto ma il secondo mostra ancora il vecchio "
+            "dominio di riserva, c'è un bug più sottile da investigare insieme."
+        ),
+    }
+
+
+@app.get("/admin/bunker/report/partite", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def report_partite_bunker(anno: int, mese: int, db_bun: Session = Depends(get_db_bun)):
+    """
+    Report mensile per la fatturazione al circolo: un PDF con ogni
+    partita (gruppo da 4) formata nel mese indicato, più il totale in
+    fondo. Riservato al livello "completo" - il circolo non lo vede.
+    """
+    from app.bunker.pdf_report_fatturazione import genera_pdf_report_fatturazione
+
+    if not (1 <= mese <= 12):
+        raise HTTPException(status_code=400, detail="Mese non valido (deve essere tra 1 e 12)")
+
+    pdf_bytes = genera_pdf_report_fatturazione(db_bun, anno, mese)
+    if pdf_bytes is None:
+        raise HTTPException(status_code=404, detail=f"Nessuna partita trovata per {mese}/{anno}")
+
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="report_partite_{anno}_{mese:02d}.pdf"'},
+    )
+
+
+@app.get("/admin/bunker/forza", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def pagina_forza_bunker():
+    """Serve la pagina web degli strumenti di forzatura manuale del ciclo torneo."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_forza_bunker.html")
+    return FileResponse(percorso)
+
+
+@app.get("/admin/bunker/database", dependencies=[Depends(verifica_credenziali_admin_bunker)])
+def pagina_admin_database_bunker():
+    """Serve la pagina web del pannello database Bunker."""
+    import os
+    percorso = os.path.join(os.path.dirname(__file__), "static", "admin_database_bunker.html")
     return FileResponse(percorso)
 
 
