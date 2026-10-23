@@ -1990,31 +1990,51 @@ def elenca_tornei_padelcity(db_pc: Session = Depends(get_db_pc)):
         "ANNULLATO": "Annullato",
     }
 
+    iscritti_per_slot = {}  # cache: lo stesso slot compare in più tappe
+
     risultato = []
     for torneo in tornei:
         campionato = db_pc.query(Campionato).filter(Campionato.id == torneo.campionato_id).first()
-        numero_confermati = (
-            db_pc.query(IscrizioneTorneo)
+        # Confermati: con nome e cognome, per il riquadro al passaggio del
+        # mouse nel pannello. Le riserve (rimaste fuori dai gruppi) sono
+        # segnalate a parte.
+        righe_confermati = (
+            db_pc.query(UtentePC.nome, UtentePC.cognome, IscrizioneTorneo.ruolo)
+            .join(IscrizioneTorneo, IscrizioneTorneo.utente_id == UtentePC.id)
             .filter(IscrizioneTorneo.torneo_id == torneo.id, IscrizioneTorneo.stato_risposta == "CONFERMATO")
-            .count()
+            .all()
         )
+        nomi_confermati = sorted(
+            (
+                f"{nome} {cognome}" + (" (riserva)" if (ruolo or "").startswith("RISERVA") else "")
+                for nome, cognome, ruolo in righe_confermati
+            ),
+            key=str.lower,
+        )
+        numero_confermati = len(nomi_confermati)
 
         # ISCRITTI: tutti i giocatori attivi iscritti a questo CAMPIONATO
         # (bit dello slot nel loro campionati_bitmask), indipendentemente
         # da quanti abbiano poi confermato questa singola tappa. Stesso
         # criterio usato dal job che manda le richieste di iscrizione.
+        nomi_iscritti = []
         if campionato:
-            bit_slot = 1 << (campionato.slot - 1)
-            numero_iscritti = (
-                db_pc.query(UtentePC)
-                .filter(
-                    UtentePC.stato_account == "ATTIVO",
-                    UtentePC.campionati_bitmask.op("&")(bit_slot) == bit_slot,
+            if campionato.slot not in iscritti_per_slot:
+                bit_slot = 1 << (campionato.slot - 1)
+                iscritti_per_slot[campionato.slot] = sorted(
+                    (
+                        f"{nome} {cognome}"
+                        for nome, cognome in db_pc.query(UtentePC.nome, UtentePC.cognome)
+                        .filter(
+                            UtentePC.stato_account == "ATTIVO",
+                            UtentePC.campionati_bitmask.op("&")(bit_slot) == bit_slot,
+                        )
+                        .all()
+                    ),
+                    key=str.lower,
                 )
-                .count()
-            )
-        else:
-            numero_iscritti = 0
+            nomi_iscritti = iscritti_per_slot[campionato.slot]
+        numero_iscritti = len(nomi_iscritti)
 
         gruppi = db_pc.query(GruppoPC).filter(GruppoPC.torneo_id == torneo.id).all()
         vacanza = False
@@ -2032,6 +2052,8 @@ def elenca_tornei_padelcity(db_pc: Session = Depends(get_db_pc)):
             "stato_leggibile": etichette_stato.get(torneo.stato, torneo.stato),
             "numero_confermati": numero_confermati,
             "numero_iscritti": numero_iscritti,
+            "nomi_confermati": nomi_confermati,
+            "nomi_iscritti": nomi_iscritti,
             "attivo": torneo.attivo,
             "cancellabile": torneo.stato in {"PROGRAMMATO", "RICHIESTE_INVIATE", "SOLLECITO_INVIATO"} and torneo.attivo,
             "vacanza_senza_riserve": vacanza,
