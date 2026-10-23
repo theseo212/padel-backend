@@ -107,6 +107,18 @@
     }
     #classifica-espansa ol { margin: 8px 0 0; padding-left: 22px; }
     #classifica-espansa li { padding: 3px 0; font-size: 14px; }
+    .conta-nomi { cursor: help; border-bottom: 1px dotted #888; padding: 0 2px; outline: none; }
+    .conta-nomi:hover, .conta-nomi:focus { background: #eef3ff; border-radius: 3px; }
+    #popup-nomi {
+        position: fixed; display: none; z-index: 1000; pointer-events: none;
+        background: #1f2937; color: #fff; border-radius: 8px; padding: 10px 12px;
+        font-size: 12px; line-height: 1.5; box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        max-width: min(560px, calc(100vw - 16px));
+    }
+    #popup-nomi .titolo { font-weight: 600; margin-bottom: 6px; color: #cbd5e1; }
+    #popup-nomi ul { list-style: none; margin: 0; padding: 0; }
+    #popup-nomi li { white-space: nowrap; }
+    #popup-nomi .vuoto-popup { font-style: italic; color: #9ca3af; }
 </style>
 </head>
 <body>
@@ -194,12 +206,90 @@ async function caricaTornei() {
     }
 }
 
+// ---- Popup nomi su Iscritti / Confermati ----
+let _popupNomi = null;
+
+function _assicuraPopupNomi() {
+    if (!_popupNomi) {
+        _popupNomi = document.createElement('div');
+        _popupNomi.id = 'popup-nomi';
+        document.body.appendChild(_popupNomi);
+    }
+    return _popupNomi;
+}
+
+function mostraPopupNomi(elemento) {
+    const torneo = (window._torneiPerId || {})[elemento.dataset.id];
+    if (!torneo) return;
+    const tipo = elemento.dataset.tipo;
+    const nomi = tipo === 'iscritti' ? torneo.nomi_iscritti : torneo.nomi_confermati;
+    if (!Array.isArray(nomi)) return;  // backend vecchio: nessun popup
+
+    const popup = _assicuraPopupNomi();
+    popup.textContent = '';
+
+    const titolo = document.createElement('div');
+    titolo.className = 'titolo';
+    titolo.textContent = (tipo === 'iscritti' ? 'Iscritti al campionato' : 'Confermati per questa tappa') + ' (' + nomi.length + ')';
+    popup.appendChild(titolo);
+
+    if (nomi.length === 0) {
+        const vuoto = document.createElement('div');
+        vuoto.className = 'vuoto-popup';
+        vuoto.textContent = 'Nessuno';
+        popup.appendChild(vuoto);
+    } else {
+        const lista = document.createElement('ul');
+        // Più colonne se l'elenco è lungo, per non uscire dallo schermo.
+        const colonne = nomi.length > 30 ? 3 : (nomi.length > 12 ? 2 : 1);
+        lista.style.columnCount = colonne;
+        lista.style.columnGap = '20px';
+        nomi.forEach(n => {
+            const li = document.createElement('li');
+            li.textContent = n;
+            lista.appendChild(li);
+        });
+        popup.appendChild(lista);
+    }
+
+    // Posizione: sotto il numero, ribaltato sopra se non c'è spazio, sempre dentro lo schermo.
+    popup.style.display = 'block';
+    popup.style.left = '0px';
+    popup.style.top = '0px';
+    const r = elemento.getBoundingClientRect();
+    const w = popup.offsetWidth, h = popup.offsetHeight;
+    let left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+    let top = r.bottom + 6;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    popup.style.left = left + 'px';
+    popup.style.top = top + 'px';
+}
+
+function nascondiPopupNomi() {
+    if (_popupNomi) _popupNomi.style.display = 'none';
+}
+
+document.addEventListener('mouseover', e => {
+    const el = e.target.closest && e.target.closest('.conta-nomi');
+    if (el) mostraPopupNomi(el);
+});
+document.addEventListener('mouseout', e => {
+    if (e.target.closest && e.target.closest('.conta-nomi')) nascondiPopupNomi();
+});
+document.addEventListener('focusin', e => {
+    const el = e.target.closest && e.target.closest('.conta-nomi');
+    if (el) mostraPopupNomi(el);
+});
+document.addEventListener('focusout', nascondiPopupNomi);
+window.addEventListener('scroll', nascondiPopupNomi, true);
+
 function renderizzaTabellaTornei(tornei) {
     const contenitore = document.getElementById('tabella-tornei');
     if (tornei.length === 0) {
         contenitore.innerHTML = '<p class="vuoto">Nessun torneo trovato.</p>';
         return;
     }
+    window._torneiPerId = Object.fromEntries(tornei.map(x => [x.id, x]));
     const righe = tornei.map(t => {
         const classeBadge = NOMI_STATO_BADGE[t.stato] || 'badge-programmato';
         const badgeVacanza = t.vacanza_senza_riserve
@@ -213,8 +303,8 @@ function renderizzaTabellaTornei(tornei) {
             <tr class="${t.attivo ? '' : 'torneo-non-attivo'}">
                 <td><strong>${t.giorno_leggibile}</strong> ${formattaData(t.data)}<br><span style="color:#888; font-size:12px;">${t.campionato_nome || ''}</span></td>
                 <td><span class="badge-stato ${classeBadge}">${t.stato_leggibile}</span>${badgeVacanza}</td>
-                <td>${t.numero_iscritti}</td>
-                <td>${t.numero_confermati}</td>
+                <td><span class="conta-nomi" tabindex="0" data-tipo="iscritti" data-id="${t.id}">${t.numero_iscritti}</span></td>
+                <td><span class="conta-nomi" tabindex="0" data-tipo="confermati" data-id="${t.id}">${t.numero_confermati}</span></td>
                 <td>${bottoneAzione}</td>
             </tr>`;
     }).join('');
